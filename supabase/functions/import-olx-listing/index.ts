@@ -322,7 +322,7 @@ Deno.serve(async (req) => {
           await userClient.from("listing_images").delete().eq("listing_id", listingRow.id);
           const rows = imageUrls.map((u, i) => ({
             user_id, listing_id: listingRow.id,
-            original_external_url: u, status: "ready", position: i,
+            original_external_url: u, status: "downloaded", position: i,
           }));
           const { error: insErr } = await userClient.from("listing_images").insert(rows);
           if (insErr) {
