@@ -1,16 +1,15 @@
-Adicionar botão de excluir foto individual na tela de detalhes do anúncio.
+## Resumo
+Aumentar o limite máximo de fotos importadas por anúncio OLX de 20 para 40.
 
-## O que muda
+## O que será alterado
+- `supabase/functions/_shared/gecko.ts` — 3 locais onde o limite está hardcoded como `20`:
+  1. `collect()` — `return out.slice(0, 20);`
+  2. `collectDeepImageUrls()` — `if (out.length >= 20 ...)` e `return out.slice(0, 20);`
+  3. `mergeUrls()` — `return out.slice(0, 20);`
 
-- Em cada miniatura de foto (em `src/routes/_authenticated/listings.$id.tsx`), adicionar um botão "Excluir" ao lado do botão "Tratar / Retratar" (canto superior direito, visível no hover).
-- Ao clicar: pedir confirmação e chamar um novo server function `deleteListingImage({ imageId })` que:
-  1. Verifica se o anúncio pertence ao usuário (RLS via `requireSupabaseAuth`).
-  2. Remove os arquivos do Storage (`storage_path` e `enhanced_storage_path` no bucket `olx-images`, se existirem).
-  3. Deleta a linha em `listing_images`.
-- Refetch da query de imagens após sucesso e feedback via toast.
+## Passo a passo
+1. Substituir todos os `slice(0, 20)` e `>= 20` por `40` no `gecko.ts`.
+2. Fazer deploy das Edge Functions afetadas (`import-olx-listing` e `search-olx-listings`) para aplicar a mudança.
 
-## Detalhes técnicos
-
-- Novo arquivo: `src/lib/delete-listing-image.functions.ts` (segue o padrão de `delete-listing.ts` já existente).
-- UI: ícone `Trash2` do lucide-react, botão vermelho pequeno com `AlertDialog` de confirmação.
-- Sem mudanças de schema, sem mudanças em Edge Functions, sem mudanças em outras telas.
+## Resultado esperado
+Próximas importações (por link ou busca) passarão a trazer até 40 fotos por anúncio.
