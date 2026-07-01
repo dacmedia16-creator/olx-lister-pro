@@ -21,6 +21,7 @@ import { formatBRL, formatDate } from "@/lib/olx";
 import { HashBadge } from "@/components/HashBadge";
 import { OlxImageCarousel } from "@/components/OlxImageCarousel";
 import { deleteListing } from "@/lib/delete-listing";
+import { deleteListingImage } from "@/lib/delete-listing-image";
 import { downloadEnhanced, downloadEnhancedZip, getEnhancedSignedUrl } from "@/lib/enhanced-images";
 
 export const Route = createFileRoute("/_authenticated/listings/$id")({
