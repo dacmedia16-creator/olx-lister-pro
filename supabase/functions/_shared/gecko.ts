@@ -57,7 +57,7 @@ function collect(fields: any[]): string[] {
       if (u && !seen.has(u)) { seen.add(u); out.push(u); }
     }
   }
-  return out.slice(0, 10);
+  return out.slice(0, 20);
 }
 
 const IMAGE_EXT_RE = /https?:\/\/[^\s"'<>\\]+?\.(?:jpe?g|png|webp)(?:\?[^\s"'<>\\]*)?/gi;
@@ -132,7 +132,7 @@ function collectDeepImageUrls(root: any, maxDepth = 7): string[] {
   }
 
   walk(root, 0);
-  return out.slice(0, 10);
+  return out.slice(0, 20);
 }
 
 function mergeUrls(...groups: string[][]): string[] {
@@ -147,7 +147,7 @@ function mergeUrls(...groups: string[][]): string[] {
       }
     }
   }
-  return out.slice(0, 10);
+  return out.slice(0, 20);
 }
 
 export function extractPlpImages(item: any): string[] {
