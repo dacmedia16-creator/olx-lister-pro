@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { formatBRL, formatDate, isValidOlxUrl } from "@/lib/olx";
+import { OlxImageCarousel } from "@/components/OlxImageCarousel";
 
 export const Route = createFileRoute("/_authenticated/search")({
   head: () => ({ meta: [{ title: "Buscar anúncios OLX" }] }),
@@ -23,6 +24,7 @@ type ResultRow = {
   price: number | null;
   price_display: string | null;
   main_image_url: string | null;
+  image_urls: string[] | null;
   city: string | null;
   state: string | null;
   neighborhood: string | null;
@@ -278,13 +280,12 @@ function SearchPage() {
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {results.map((r) => (
                 <div key={r.id} className="flex flex-col overflow-hidden rounded-md border border-border bg-card">
-                  <div className="relative aspect-video bg-muted">
-                    {r.main_image_url ? (
-                      <img src={r.main_image_url} alt={r.title ?? ""} className="h-full w-full object-cover" loading="lazy" />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-xs text-muted-foreground">sem foto</div>
-                    )}
-                    <label className="absolute left-2 top-2 flex items-center gap-1 rounded bg-background/80 px-2 py-1 text-xs">
+                  <div className="relative">
+                    <OlxImageCarousel
+                      urls={(r.image_urls && r.image_urls.length > 0) ? r.image_urls : (r.main_image_url ? [r.main_image_url] : [])}
+                      alt={r.title ?? ""}
+                    />
+                    <label className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded bg-background/80 px-2 py-1 text-xs">
                       <Checkbox
                         checked={!!selected[r.id]}
                         onCheckedChange={(v) => setSelected((s) => ({ ...s, [r.id]: Boolean(v) }))}
@@ -292,7 +293,7 @@ function SearchPage() {
                       Selecionar
                     </label>
                     {r.imported_listing_id && (
-                      <Badge className="absolute right-2 top-2" variant="default">Importado</Badge>
+                      <Badge className="absolute right-2 top-2 z-10" variant="default">Importado</Badge>
                     )}
                   </div>
                   <div className="flex flex-1 flex-col gap-1 p-3">
