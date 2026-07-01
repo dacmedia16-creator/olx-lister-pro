@@ -56,6 +56,7 @@ type Listing = {
   olx_pay_enabled: boolean | null;
   olx_delivery_enabled: boolean | null;
   images_source: string | null;
+  source_portal: string | null;
 };
 
 type Image = {
