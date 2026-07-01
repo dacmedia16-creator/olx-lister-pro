@@ -257,9 +257,9 @@ async function fetchPlpFallbackImages(url: string, apiKey: string, listingRoot?:
   };
 }
 
-async function mapListing(user_id: string, source_url: string, gecko: any) {
+async function mapListing(user_id: string, source_url: string, gecko: any, portal: Portal) {
   const d = getListingRoot(gecko);
-  const seller = pick<any>(d, ["seller", "user", "advertiser"]) ?? {};
+  const seller = pick<any>(d, ["seller", "user", "advertiser", "account", "publisher"]) ?? {};
   const location = pick<any>(d, ["location", "address"]) ?? {};
 
   let phoneHashes: string[] = [];
@@ -267,7 +267,7 @@ async function mapListing(user_id: string, source_url: string, gecko: any) {
   if (Array.isArray(preHashed)) {
     phoneHashes = preHashed.filter((x) => typeof x === "string");
   } else {
-    const rawPhones = pick<any[]>(d, ["seller.phones", "phones", "contact.phones"]) ?? [];
+    const rawPhones = pick<any[]>(d, ["seller.phones", "phones", "contact.phones", "account.phones"]) ?? [];
     phoneHashes = await Promise.all(
       rawPhones.map((p: any) => (typeof p === "string" ? p : p?.number || p?.phone)).filter(Boolean).map((p: string) => sha256(p)),
     );
@@ -278,18 +278,26 @@ async function mapListing(user_id: string, source_url: string, gecko: any) {
     sellerHash = await sha256(String(seller.name ?? seller.displayName));
   }
 
+  const rawPrice = pick<any>(d, ["price.value", "price", "priceValue", "pricingInfos.price", "pricingInfos.0.price"]);
+  const price = typeof rawPrice === "number"
+    ? rawPrice
+    : (typeof rawPrice === "string" ? Number(rawPrice.replace(/[^\d,.-]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", ".")) || null : null);
+
   return {
-    user_id, source: "olx.com.br", source_url,
+    user_id,
+    source: geckoSourceLabel(portal),
+    source_portal: portal,
+    source_url,
     listing_id: pick<string>(d, ["listingId", "listing_id", "id"]) ?? null,
     ad_id: pick<string>(d, ["adId", "ad_id"]) ?? null,
     title: pick<string>(d, ["title", "name"]) ?? null,
     description: pick<string>(d, ["description", "body"]) ?? null,
-    price: pick<number>(d, ["price.value", "price", "priceValue"]) ?? null,
+    price,
     currency: pick<string>(d, ["price.currency", "currency"]) ?? "BRL",
-    listed_at: pick<string>(d, ["listedAt", "listed_at", "publishedAt", "createdAt"]) ?? null,
-    category: pick<string>(d, ["category", "categoryName"]) ?? null,
-    main_category: pick<string>(d, ["mainCategory", "main_category"]) ?? null,
-    sub_category: pick<string>(d, ["subCategory", "sub_category"]) ?? null,
+    listed_at: pick<string>(d, ["listedAt", "listed_at", "publishedAt", "createdAt", "createdDate"]) ?? null,
+    category: pick<string>(d, ["category", "categoryName", "unitType"]) ?? null,
+    main_category: pick<string>(d, ["mainCategory", "main_category", "portal"]) ?? null,
+    sub_category: pick<string>(d, ["subCategory", "sub_category", "usageType"]) ?? null,
     state: pick<string>(location, ["state", "uf"]) ?? null,
     city: pick<string>(location, ["city", "municipality"]) ?? null,
     neighborhood: pick<string>(location, ["neighborhood", "neighbourhood", "district"]) ?? null,
@@ -300,7 +308,7 @@ async function mapListing(user_id: string, source_url: string, gecko: any) {
     seller_name_hash: sellerHash,
     seller_is_professional: seller?.isProfessional ?? seller?.professional ?? null,
     phone_hashes: phoneHashes.length ? phoneHashes : null,
-    attributes_json: pick<any>(d, ["attributes", "properties", "specs"]) ?? null,
+    attributes_json: pick<any>(d, ["attributes", "properties", "specs", "amenities"]) ?? null,
     olx_pay_enabled: pick<boolean>(d, ["olxPay", "olx_pay", "olxPayEnabled"]) ?? null,
     olx_delivery_enabled: pick<boolean>(d, ["olxDelivery", "olx_delivery", "olxDeliveryEnabled"]) ?? null,
     request_id: gecko?.requestId ?? null,
