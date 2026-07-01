@@ -74,27 +74,9 @@ async function callOpenAiImageEdit(imageBytes: Uint8Array, promptText: string): 
   return out;
 }
 
-// Detecta faixas quase-brancas nas laterais.
-async function hasWhiteSideBars(bytes: Uint8Array): Promise<boolean> {
-  try {
-    const img = await decodeImage(bytes) as Image;
-    const w = img.width, h = img.height;
-    const colL = Math.max(1, Math.floor(w * 0.02));
-    const colR = Math.min(w - 1, Math.floor(w * 0.98));
-    const samples = 20;
-    let whites = 0, total = 0;
-    for (let i = 0; i < samples; i++) {
-      const y = Math.max(1, Math.floor((i + 0.5) * h / samples));
-      for (const x of [colL, colR]) {
-        const px = img.getPixelAt(x, y);
-        const r = (px >>> 24) & 0xff, g = (px >>> 16) & 0xff, b = (px >>> 8) & 0xff;
-        if (r > 245 && g > 245 && b > 245) whites++;
-        total++;
-      }
-    }
-    return total > 0 && whites / total > 0.7;
-  } catch { return false; }
-}
+// Detecção de faixas brancas removida — dependia de imagescript. Como pedimos outpainting
+// no prompt e size=1536x1024 direto, se aparecerem faixas o usuário pode "Retratar" a foto.
+
 
 // Lê width/height direto do header PNG.
 function readPngSize(bytes: Uint8Array): { width: number; height: number } | null {
