@@ -84,6 +84,7 @@ export type Database = {
           finished_at: string | null
           id: string
           processed_urls: number
+          source_portal: string | null
           status: Database["public"]["Enums"]["import_job_status"]
           successful_count: number
           total_urls: number
@@ -96,6 +97,7 @@ export type Database = {
           finished_at?: string | null
           id?: string
           processed_urls?: number
+          source_portal?: string | null
           status?: Database["public"]["Enums"]["import_job_status"]
           successful_count?: number
           total_urls?: number
@@ -108,6 +110,7 @@ export type Database = {
           finished_at?: string | null
           id?: string
           processed_urls?: number
+          source_portal?: string | null
           status?: Database["public"]["Enums"]["import_job_status"]
           successful_count?: number
           total_urls?: number
@@ -143,6 +146,7 @@ export type Database = {
           seller_is_professional: boolean | null
           seller_name_hash: string | null
           source: string
+          source_portal: string
           source_url: string
           state: string | null
           sub_category: string | null
@@ -178,6 +182,7 @@ export type Database = {
           seller_is_professional?: boolean | null
           seller_name_hash?: string | null
           source?: string
+          source_portal?: string
           source_url: string
           state?: string | null
           sub_category?: string | null
@@ -213,6 +218,7 @@ export type Database = {
           seller_is_professional?: boolean | null
           seller_name_hash?: string | null
           source?: string
+          source_portal?: string
           source_url?: string
           state?: string | null
           sub_category?: string | null
