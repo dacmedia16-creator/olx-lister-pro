@@ -1,22 +1,17 @@
 ## Objetivo
-Garantir que cada foto tratada custe no máximo ~US$ 0,02, reduzindo o gasto da OpenAI.
+No tratamento da IA, remover marca d'água / logo da OLX e ZAP quando aparecerem sobrepostos na foto.
 
-## Contexto
-Hoje `enhance-listing-images` usa `gpt-image-1` com `quality: "high"` e `size: 1536x1024`, o que custa ~US$ 0,17–0,25 por imagem. Para ficar em ~US$ 0,02 é preciso usar `quality: "low"` (única faixa que bate esse teto no `gpt-image-1`).
+## Mudança
+Arquivo: `supabase/functions/enhance-listing-images/index.ts`
 
-## Mudanças
+Acrescentar ao `PROMPT` uma instrução explícita de remoção de marca d'água, mantendo o resto do prompt (realismo, nitidez, formato 3:2, sem blur) inalterado:
 
-### 1. Edge Function `supabase/functions/enhance-listing-images/index.ts`
-- Trocar `form.append("quality", "high")` por `"low"`.
-- Definir constante `COST_PER_IMAGE_USD = 0.02` e usar no log de custo (`processing_logs`) para refletir o novo valor.
-- Ajustar o prompt: manter pedido de nitidez, mas remover exigências que dependem de `high` (ex.: "ultra-detalhado"), evitando frustração com resultado incompatível com `low`.
+> "REMOÇÃO DE MARCA D'ÁGUA: se houver logo, selo, marca d'água ou texto sobreposto dos portais OLX ou ZAP Imóveis (canto da foto, faixa, transparência) — remova completamente reconstruindo de forma fotorrealista a parte do ambiente coberta (parede, piso, móvel, céu etc.), sem deixar borrão, mancha, contorno ou fantasma da logo original."
 
-### 2. Frontend `src/routes/_authenticated/listings.$id.tsx`
-- Atualizar `COST_PER_IMAGE_USD` de `0.19` para `0.02`.
-- No `AlertDialog` de confirmação, incluir aviso: "Modo econômico ativo (qualidade baixa, ~US$ 0,02/foto). O resultado pode ter menos nitidez que antes."
+Nenhuma outra alteração: modelo, qualidade (`low`), tamanho, custo estimado no frontend e fluxo de retratar continuam iguais.
 
-## Trade-off explícito ao usuário
-`quality: "low"` corta o custo em ~10x, mas reduz a fidelidade. Se depois quiser um meio-termo, dá para subir para `medium` (~US$ 0,04/foto) — só avisar.
+## Trade-off
+Como está em `quality: "low"` (~US$ 0,02/foto), a reconstrução do fundo onde estava a logo pode ficar menos precisa em logos grandes/centralizadas. Se ficar ruim em algum caso, dá para clicar em "Retratar" naquela foto específica.
 
 ## Fora de escopo
-- Limite diário por usuário, cache de retratamento e orçamento por conta (posso propor depois se quiser).
+Detectar logo por visão computacional antes de chamar a IA, subir qualidade e remover outros tipos de badge (preço, telefone, "oferta").
