@@ -24,6 +24,10 @@ import { deleteListing } from "@/lib/delete-listing";
 import { deleteListingImage } from "@/lib/delete-listing-image";
 import { downloadEnhanced, downloadEnhancedZip, getEnhancedSignedUrl } from "@/lib/enhanced-images";
 
+// Custo aproximado por imagem: OpenAI gpt-image-1, quality=high, size=1536x1024.
+// Referência: tabela pública OpenAI (~US$ 0,19/imagem em high nessa resolução).
+const COST_PER_IMAGE_USD = 0.19;
+
 export const Route = createFileRoute("/_authenticated/listings/$id")({
   head: () => ({ meta: [{ title: "Detalhes do anúncio" }] }),
   component: ListingDetail,
@@ -222,6 +226,29 @@ function ListingDetail() {
     }
   }, [id, load]);
 
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+
+  const openEnhanceConfirm = useCallback(async () => {
+    const { data: allImgs, error } = await supabase
+      .from("listing_images")
+      .select("id,original_external_url")
+      .eq("listing_id", id);
+    if (error) {
+      toast.error("Falha ao contar fotos");
+      return;
+    }
+    const count = (allImgs ?? []).filter((i: any) => i.original_external_url).length;
+    if (count === 0) {
+      toast.error("Nenhuma foto disponível para tratar");
+      return;
+    }
+    setPendingCount(count);
+    setConfirmOpen(true);
+  }, [id]);
+
+
+
 
   const enhancedList = useMemo(
     () => images.filter((i) => i.enhanced_storage_path && i.enhancement_status === "done"),
@@ -331,7 +358,7 @@ function ListingDetail() {
                   {showEnhanced ? "Ver originais" : "Ver tratadas"}
                 </Button>
               )}
-              <Button size="sm" onClick={enhance} disabled={enhancing}>
+              <Button size="sm" onClick={openEnhanceConfirm} disabled={enhancing}>
                 <Sparkles className={`mr-2 h-4 w-4 ${enhancing ? "animate-pulse" : ""}`} />
                 {enhancing
                   ? enhanceProgress
@@ -547,6 +574,37 @@ function ListingDetail() {
           <Info label="extractedAt" value={formatDate(listing.extracted_at)} />
         </CardContent>
       </Card>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar tratamento com IA</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <div>
+                  <strong>{pendingCount}</strong> foto(s) serão processadas pela OpenAI.
+                </div>
+                <div>
+                  Custo estimado:{" "}
+                  <strong>US$ {(pendingCount * COST_PER_IMAGE_USD).toFixed(2)}</strong>{" "}
+                  <span className="text-muted-foreground">
+                    (~US$ {COST_PER_IMAGE_USD.toFixed(2)} por foto)
+                  </span>
+                </div>
+                <div className="text-muted-foreground">
+                  Retratar sobrescreve as fotos já tratadas e gera novo custo.
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setConfirmOpen(false); void enhance(); }}>
+              Confirmar e tratar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
