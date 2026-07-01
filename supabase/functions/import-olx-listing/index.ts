@@ -112,7 +112,7 @@ async function fetchPlpFallbackImages(url: string, listingId: string | null, api
     const adUrl = normalizeOlxUrlForMatch(getAdUrl(ad));
     return (listingId && adId === listingId) || (adUrl && sourceMatch && (adUrl === sourceMatch || sourceMatch.includes(adUrl) || adUrl.includes(sourceMatch)));
   });
-  const target = matched ?? ads[0];
+  const target = matched;
   return {
     urls: target ? extractPlpImages(target) : [],
     plpUrl,
