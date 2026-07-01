@@ -161,13 +161,16 @@ Deno.serve(async (req) => {
       }
     }
 
-    await admin.from("processing_logs").insert({
-      user_id: userId,
-      listing_id: listingId,
-      level: "info",
-      message: `enhance-listing-images: ${results.filter(r => r.ok).length}/${results.length} sucesso`,
-      context: { results },
-    }).select().maybeSingle().then(() => {}, () => {});
+    try {
+      await admin.from("processing_logs").insert({
+        user_id: userId,
+        listing_id: listingId,
+        type: "enhance_images",
+        status: "done",
+        message: `enhance-listing-images: ${results.filter(r => r.ok).length}/${results.length} sucesso`,
+        metadata_json: { results },
+      });
+    } catch { /* noop */ }
 
     return new Response(JSON.stringify({ results }), {
       status: 200,
