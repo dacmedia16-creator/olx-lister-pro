@@ -1,6 +1,5 @@
 // Edge Function: enhance-listing-images
-// Melhora as fotos de um anúncio via Lovable AI Gateway (Gemini image edit)
-// Prompt fixo: "Melhore a imagem sem mudar o ambiente, deixe na horizontal."
+// Melhora as fotos de um anúncio via Lovable AI Gateway (OpenAI gpt-image-2 edits)
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { decode as decodeImage, Image } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
@@ -15,11 +14,12 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 const BUCKET = "olx-images";
-const PROMPT = "Outpainting de foto de imóvel em formato horizontal 16:9. As laterais da imagem contêm uma prévia BORRADA do próprio ambiente (paredes, piso, teto continuados) — SUBSTITUA essas laterais por continuação NÍTIDA e FOTORREALISTA do mesmo cômodo, estendendo naturalmente parede, piso, teto e iluminação. REGRAS OBRIGATÓRIAS: (1) NUNCA deixe faixas brancas, cinzas ou bordas borradas no resultado final; (2) a imagem inteira deve parecer UMA ÚNICA FOTO nítida de ponta a ponta; (3) NÃO invente móveis novos, NÃO adicione objetos, NÃO mude cores, estilo ou iluminação do ambiente central; (4) apenas melhore nitidez/exposição do miolo original e complete as laterais de forma coerente. Resultado sempre horizontal (paisagem).";
-const RETRY_PROMPT = PROMPT + " ATENÇÃO: a tentativa anterior devolveu faixas brancas nas laterais — desta vez REMOVA COMPLETAMENTE qualquer área branca ou borrada nas bordas e substitua por continuação realista da parede/piso/teto.";
+const PROMPT = "Melhore esta foto de imóvel e entregue no formato HORIZONTAL (paisagem, proporção aproximada 3:2). Se a foto original for vertical, faça outpainting realista estendendo naturalmente parede, piso, teto e iluminação para preencher todo o quadro horizontal. REGRAS: (1) NUNCA deixe faixas brancas, cinzas ou bordas nas laterais; (2) a imagem inteira deve parecer UMA FOTO ÚNICA e nítida; (3) NÃO invente móveis novos, NÃO mude cores, estilo ou iluminação do ambiente original; (4) apenas melhore nitidez e exposição e complete as laterais de forma coerente com o mesmo cômodo.";
+const RETRY_PROMPT = PROMPT + " ATENÇÃO: a tentativa anterior deixou faixas brancas nas laterais — desta vez REMOVA COMPLETAMENTE qualquer área branca e substitua por continuação realista da parede/piso/teto.";
+const MODEL = "openai/gpt-image-2";
+const IMAGE_SIZE = "1536x1024"; // horizontal 3:2
 const TARGET_W = 1536;
-const TARGET_H = 864;
-const MODEL = "google/gemini-2.5-flash-image";
+const TARGET_H = 1024;
 
 async function fetchBytes(url: string): Promise<Uint8Array | null> {
   try {
@@ -29,137 +29,56 @@ async function fetchBytes(url: string): Promise<Uint8Array | null> {
   } catch { return null; }
 }
 
-function bytesToDataUrl(bytes: Uint8Array, contentType: string): string {
-  let bin = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk) as unknown as number[]);
-  }
-  return `data:${contentType};base64,${btoa(bin)}`;
-}
-
-// Converte qualquer foto em um canvas horizontal 16:9 (TARGET_W x TARGET_H).
-// Em vez de faixa branca, preenche as laterais com um espelho borrado das bordas da própria foto.
-// Isso dá ao Gemini um "chute inicial" com cores/texturas do ambiente real para outpainting realista.
+// Fallback: encaixa foto em canvas horizontal 3:2 caso o modelo devolva com aspect errado.
 async function toHorizontalCanvas(bytes: Uint8Array): Promise<Uint8Array> {
-  const decoded = await decodeImage(bytes);
-  const src = decoded as Image;
-  const srcW = src.width;
-  const srcH = src.height;
+  const src = await decodeImage(bytes) as Image;
+  const srcW = src.width, srcH = src.height;
   const targetRatio = TARGET_W / TARGET_H;
   const srcRatio = srcW / srcH;
   let drawW: number, drawH: number;
-  if (srcRatio > targetRatio) {
-    drawW = TARGET_W;
-    drawH = Math.round(TARGET_W / srcRatio);
-  } else {
-    drawH = TARGET_H;
-    drawW = Math.round(TARGET_H * srcRatio);
-  }
+  if (srcRatio > targetRatio) { drawW = TARGET_W; drawH = Math.round(TARGET_W / srcRatio); }
+  else { drawH = TARGET_H; drawW = Math.round(TARGET_H * srcRatio); }
   const resized = src.clone().resize(drawW, drawH);
   const canvas = new Image(TARGET_W, TARGET_H);
-
-  // Preenche fundo esticando a foto inteira e borrando forte — cores do próprio ambiente.
-  const bgStretch = src.clone().resize(TARGET_W, TARGET_H);
-  try { (bgStretch as any).blur(20); } catch { /* imagescript blur may vary */ }
-  canvas.composite(bgStretch, 0, 0);
-
+  const bg = src.clone().resize(TARGET_W, TARGET_H);
+  try { (bg as any).blur(20); } catch { /* noop */ }
+  canvas.composite(bg, 0, 0);
   const offX = Math.floor((TARGET_W - drawW) / 2);
   const offY = Math.floor((TARGET_H - drawH) / 2);
-
-  // Se sobrar espaço lateral, sobrepõe bordas espelhadas + borradas para transição mais natural
-  if (offX > 0) {
-    const stripW = Math.max(1, Math.floor(srcW * 0.08));
-    // Faixa esquerda: primeiros stripW pixels da foto, espelhados
-    const leftStrip = src.clone().crop(0, 0, stripW, srcH);
-    (leftStrip as any).flip?.(true, false);
-    const leftFill = leftStrip.resize(offX, TARGET_H);
-    try { (leftFill as any).blur(15); } catch { /* noop */ }
-    canvas.composite(leftFill, 0, 0);
-    // Faixa direita
-    const rightStrip = src.clone().crop(srcW - stripW, 0, stripW, srcH);
-    (rightStrip as any).flip?.(true, false);
-    const rightFill = rightStrip.resize(offX, TARGET_H);
-    try { (rightFill as any).blur(15); } catch { /* noop */ }
-    canvas.composite(rightFill, TARGET_W - offX, 0);
-  }
-  if (offY > 0) {
-    const stripH = Math.max(1, Math.floor(srcH * 0.08));
-    const topStrip = src.clone().crop(0, 0, srcW, stripH);
-    (topStrip as any).flip?.(false, true);
-    const topFill = topStrip.resize(TARGET_W, offY);
-    try { (topFill as any).blur(15); } catch { /* noop */ }
-    canvas.composite(topFill, 0, 0);
-    const botStrip = src.clone().crop(0, srcH - stripH, srcW, stripH);
-    (botStrip as any).flip?.(false, true);
-    const botFill = botStrip.resize(TARGET_W, offY);
-    try { (botFill as any).blur(15); } catch { /* noop */ }
-    canvas.composite(botFill, 0, TARGET_H - offY);
-  }
-
-  // Foto original nítida por cima
   canvas.composite(resized, offX, offY);
-  return await canvas.encode(); // PNG
+  return await canvas.encode();
 }
 
-function extractImageB64FromResponse(json: any): string | null {
-  // OpenRouter/Gemini image via chat.completions -> images array in message
-  const choice = json?.choices?.[0]?.message;
-  if (!choice) return null;
-  const imgs = choice.images;
-  if (Array.isArray(imgs) && imgs.length) {
-    const u = imgs[0]?.image_url?.url ?? imgs[0]?.url ?? imgs[0];
-    if (typeof u === "string" && u.startsWith("data:")) {
-      const idx = u.indexOf(",");
-      return idx >= 0 ? u.slice(idx + 1) : null;
-    }
-  }
-  // Fallback: content parts
-  const content = choice.content;
-  if (Array.isArray(content)) {
-    for (const p of content) {
-      const u = p?.image_url?.url ?? p?.url;
-      if (typeof u === "string" && u.startsWith("data:")) {
-        const idx = u.indexOf(",");
-        return idx >= 0 ? u.slice(idx + 1) : null;
-      }
-    }
-  }
-  return null;
-}
+async function callOpenAiImageEdit(imageBytes: Uint8Array, promptText: string): Promise<Uint8Array> {
+  const form = new FormData();
+  form.append("model", MODEL);
+  form.append("prompt", promptText);
+  form.append("size", IMAGE_SIZE);
+  form.append("quality", "low");
+  form.append("n", "1");
+  form.append("image", new Blob([imageBytes], { type: "image/png" }), "input.png");
 
-async function callGeminiEdit(dataUrl: string, promptText: string = PROMPT): Promise<string> {
-  const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const r = await fetch("https://ai.gateway.lovable.dev/v1/images/edits", {
     method: "POST",
-    headers: {
-      "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      modalities: ["image", "text"],
-      messages: [{
-        role: "user",
-        content: [
-          { type: "text", text: promptText },
-          { type: "image_url", image_url: { url: dataUrl } },
-        ],
-      }],
-    }),
+    headers: { "Authorization": `Bearer ${LOVABLE_API_KEY}` },
+    body: form,
   });
   if (!r.ok) {
     const text = await r.text().catch(() => "");
     if (r.status === 429) throw new Error("Limite de requisições atingido (429). Tente novamente em instantes.");
     if (r.status === 402) throw new Error("Créditos de IA esgotados (402). Adicione créditos no workspace.");
-    throw new Error(`Gateway error ${r.status}: ${text.slice(0, 300)}`);
+    throw new Error(`Gateway error ${r.status}: ${text.slice(0, 400)}`);
   }
   const json = await r.json();
-  const b64 = extractImageB64FromResponse(json);
+  const b64 = json?.data?.[0]?.b64_json;
   if (!b64) throw new Error("Resposta sem imagem gerada");
-  return b64;
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
-// Detecta faixas quase-brancas amostrando pixels a 2% da esquerda/direita.
+// Detecta faixas quase-brancas nas laterais.
 async function hasWhiteSideBars(bytes: Uint8Array): Promise<boolean> {
   try {
     const img = await decodeImage(bytes) as Image;
@@ -172,9 +91,7 @@ async function hasWhiteSideBars(bytes: Uint8Array): Promise<boolean> {
       const y = Math.max(1, Math.floor((i + 0.5) * h / samples));
       for (const x of [colL, colR]) {
         const px = img.getPixelAt(x, y);
-        const r = (px >>> 24) & 0xff;
-        const g = (px >>> 16) & 0xff;
-        const b = (px >>> 8) & 0xff;
+        const r = (px >>> 24) & 0xff, g = (px >>> 16) & 0xff, b = (px >>> 8) & 0xff;
         if (r > 245 && g > 245 && b > 245) whites++;
         total++;
       }
@@ -183,11 +100,12 @@ async function hasWhiteSideBars(bytes: Uint8Array): Promise<boolean> {
   } catch { return false; }
 }
 
-function b64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
+// Lê width/height direto do header PNG.
+function readPngSize(bytes: Uint8Array): { width: number; height: number } | null {
+  if (bytes.length < 24) return null;
+  if (bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4e || bytes[3] !== 0x47) return null;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return { width: dv.getUint32(16), height: dv.getUint32(20) };
 }
 
 Deno.serve(async (req) => {
@@ -211,7 +129,6 @@ Deno.serve(async (req) => {
     const imageIds = Array.isArray(body?.image_ids) ? (body.image_ids as string[]) : null;
     if (!listingId) return new Response(JSON.stringify({ error: "listing_id required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-    // Verifica ownership
     const { data: listing, error: lerr } = await admin.from("olx_listings").select("id,user_id").eq("id", listingId).maybeSingle();
     if (lerr || !listing || listing.user_id !== userId) {
       return new Response(JSON.stringify({ error: "not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -222,57 +139,39 @@ Deno.serve(async (req) => {
     const { data: imgs } = await q;
     const allTargets = (imgs ?? []).filter((i: any) => i.original_external_url);
 
-    // Limita quantas fotos processar por invocação (evita CPU Time exceeded)
     const MAX_PER_CALL = 2;
     const targets = allTargets.slice(0, MAX_PER_CALL);
     const remaining_ids = allTargets.slice(MAX_PER_CALL).map((t: any) => t.id);
 
-    // Marca as que vão processar agora
     await admin.from("listing_images")
       .update({ enhancement_status: "processing", enhancement_prompt: PROMPT })
       .in("id", targets.map((t: any) => t.id));
 
-    const TARGET_RATIO = TARGET_W / TARGET_H; // 16:9 ≈ 1.777
-    const TOLERANCE = 0.03;
-
-    // Lê width/height direto do header PNG (bytes 16..24). Muito mais barato que decode.
-    function readPngSize(bytes: Uint8Array): { width: number; height: number } | null {
-      if (bytes.length < 24) return null;
-      // PNG signature: 89 50 4E 47 0D 0A 1A 0A
-      if (bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4e || bytes[3] !== 0x47) return null;
-      const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-      return { width: dv.getUint32(16), height: dv.getUint32(20) };
-    }
+    const TARGET_RATIO = TARGET_W / TARGET_H;
+    const TOLERANCE = 0.05;
 
     const results: Array<{ id: string; ok: boolean; error?: string; original_ratio?: number; final_ratio?: number; was_corrected?: boolean; white_bars_detected?: boolean; retried?: boolean }> = [];
     for (const img of targets) {
       try {
         const srcBytes = await fetchBytes(img.original_external_url!);
         if (!srcBytes) throw new Error("Falha ao baixar imagem original");
-        const horizontalPng = await toHorizontalCanvas(srcBytes);
-        const dataUrl = bytesToDataUrl(horizontalPng, "image/png");
-        let b64 = await callGeminiEdit(dataUrl, PROMPT);
-        let bytes = b64ToBytes(b64);
 
-        // Detecta faixas brancas nas laterais — se sim, refaz uma vez com prompt reforçado
+        let bytes = await callOpenAiImageEdit(srcBytes, PROMPT);
+
+        // Retry se faixas brancas
         let whiteBars = await hasWhiteSideBars(bytes);
         let retried = false;
         if (whiteBars) {
           try {
-            b64 = await callGeminiEdit(dataUrl, RETRY_PROMPT);
-            const retryBytes = b64ToBytes(b64);
+            const retryBytes = await callOpenAiImageEdit(srcBytes, RETRY_PROMPT);
             retried = true;
             const stillWhite = await hasWhiteSideBars(retryBytes);
-            if (!stillWhite) {
-              bytes = retryBytes;
-              whiteBars = false;
-            } else {
-              bytes = retryBytes; // aceita mesmo assim, mas registra
-            }
+            bytes = retryBytes;
+            if (!stillWhite) whiteBars = false;
           } catch { /* mantém primeira tentativa */ }
         }
 
-        // Validação de aspect ratio via header PNG
+        // Valida aspect ratio; se torto, encaixa em canvas horizontal
         let originalRatio: number | undefined;
         let finalRatio: number | undefined;
         let wasCorrected = false;
@@ -313,15 +212,14 @@ Deno.serve(async (req) => {
       }
     }
 
-
     try {
       await admin.from("processing_logs").insert({
         user_id: userId,
         listing_id: listingId,
         type: "enhance_images",
         status: "done",
-        message: `enhance-listing-images: ${results.filter(r => r.ok).length}/${results.length} sucesso`,
-        metadata_json: { results },
+        message: `enhance-listing-images (${MODEL}): ${results.filter(r => r.ok).length}/${results.length} sucesso`,
+        metadata_json: { model: MODEL, results },
       });
     } catch { /* noop */ }
 
