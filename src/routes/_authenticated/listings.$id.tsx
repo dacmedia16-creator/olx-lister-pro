@@ -140,8 +140,8 @@ function ListingDetail() {
                 <p className="font-medium">Fotos indisponíveis</p>
               </div>
               <p className="text-sm text-muted-foreground">
-                A GeckoAPI não conseguiu extrair as fotos deste anúncio (comum em imóveis). A página da OLX
-                pode expor as fotos em outro momento — tente reimportar mais tarde, ou veja as fotos direto no site.
+                A GeckoAPI retornou 0 imagens para este anúncio, mesmo após o fallback de busca PLP. Tente
+                reimportar mais tarde ou veja as fotos direto no site da OLX.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" onClick={reimport} disabled={reimporting}>
