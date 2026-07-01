@@ -70,7 +70,7 @@ function looksLikeImageUrl(raw: string): boolean {
     const hostAndPath = `${u.hostname}${u.pathname}`;
     if (!IMAGE_HOST_HINT_RE.test(hostAndPath)) return false;
     // Avoid OLX page/category/listing URLs that appear in attribute links.
-    if (/olx\.com\.br$/i.test(u.hostname) && !/thumb|image|img|photo|media|picture/i.test(u.pathname)) return false;
+    if (/(^|\.)olx\.com\.br$/i.test(u.hostname) && !/thumb|image|img|photo|media|picture/i.test(u.pathname)) return false;
     return true;
   } catch {
     return false;
