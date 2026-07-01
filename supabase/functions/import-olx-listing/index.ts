@@ -105,16 +105,27 @@ async function mapListing(user_id: string, source_url: string, gecko: any) {
   const d = getListingRoot(gecko);
   const seller = pick<any>(d, ["seller", "user", "advertiser"]) ?? {};
   const location = pick<any>(d, ["location", "address"]) ?? {};
-  const phones: any[] =
-    pick<any[]>(d, ["seller.phones", "phones", "contact.phones"]) ?? [];
-  const phoneHashes = await Promise.all(
-    (Array.isArray(phones) ? phones : [])
-      .map((p: any) => (typeof p === "string" ? p : p?.number || p?.phone))
-      .filter(Boolean)
-      .map((p: string) => sha256(p)),
-  );
-  const sellerName = seller?.name || seller?.displayName;
-  const sellerHash = sellerName ? await sha256(String(sellerName)) : null;
+
+  // Telefones: schema oficial entrega hasheados em `phoneHashes`; fallback para brutos.
+  let phoneHashes: string[] = [];
+  const preHashed = pick<any[]>(d, ["phoneHashes", "phone_hashes"]);
+  if (Array.isArray(preHashed)) {
+    phoneHashes = preHashed.filter((x) => typeof x === "string");
+  } else {
+    const rawPhones = pick<any[]>(d, ["seller.phones", "phones", "contact.phones"]) ?? [];
+    phoneHashes = await Promise.all(
+      rawPhones
+        .map((p: any) => (typeof p === "string" ? p : p?.number || p?.phone))
+        .filter(Boolean)
+        .map((p: string) => sha256(p)),
+    );
+  }
+
+  // Nome: PDP oficial já traz `nameHash`; se vier `name` cru, hasheia.
+  let sellerHash: string | null = seller?.nameHash ?? seller?.name_hash ?? null;
+  if (!sellerHash && (seller?.name || seller?.displayName)) {
+    sellerHash = await sha256(String(seller.name ?? seller.displayName));
+  }
 
   return {
     user_id,
@@ -145,7 +156,8 @@ async function mapListing(user_id: string, source_url: string, gecko: any) {
     olx_delivery_enabled: pick<boolean>(d, ["olxDelivery", "olx_delivery", "olxDeliveryEnabled"]) ?? null,
     request_id: gecko?.requestId ?? null,
     execution_id: gecko?.executionId ?? null,
-    extracted_at: gecko?.extractedAt ?? null,
+    // extractedAt oficial fica em gecko.data.extractedAt (não no root)
+    extracted_at: gecko?.data?.extractedAt ?? gecko?.extractedAt ?? null,
   };
 }
 
@@ -227,6 +239,21 @@ Deno.serve(async (req) => {
         }
 
         const mapped = await mapListing(user_id, url, gecko);
+
+        // Alerta defensivo: se o mapeamento não achou título, a resposta veio fora do schema.
+        if (!mapped.title) {
+          await userClient.from("processing_logs").insert({
+            user_id, job_id: jobId, type: "listing", status: "warning",
+            message: "Anúncio retornou sem dados principais (título nulo)",
+            metadata_json: {
+              url,
+              gecko_root_keys: gecko && typeof gecko === "object" ? Object.keys(gecko) : null,
+              gecko_data_keys: gecko?.data && typeof gecko.data === "object" ? Object.keys(gecko.data) : null,
+              gecko_data_data_keys: gecko?.data?.data && typeof gecko.data.data === "object" ? Object.keys(gecko.data.data) : null,
+            },
+          });
+        }
+
         const { data: listingRow, error: upErr } = await userClient
           .from("olx_listings")
           .upsert(mapped, { onConflict: "user_id,source_url" })
@@ -248,7 +275,7 @@ Deno.serve(async (req) => {
           await userClient.from("processing_logs").insert({
             user_id, job_id: jobId, listing_id: listingRow.id,
             type: "image", status: "warning",
-            message: "Nenhuma imagem retornada pelo PDP; imagens antigas preservadas",
+            message: "GeckoAPI devolveu 0 imagens para este anúncio (parser data_layer sem acesso às fotos); imagens antigas preservadas",
             metadata_json: { url },
           });
         } else {
