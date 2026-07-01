@@ -232,6 +232,7 @@ export type Database = {
           featured: boolean | null
           id: string
           image_count: number | null
+          image_urls: string[]
           imported_listing_id: string | null
           listed_at: string | null
           location_display: string | null
@@ -258,6 +259,7 @@ export type Database = {
           featured?: boolean | null
           id?: string
           image_count?: number | null
+          image_urls?: string[]
           imported_listing_id?: string | null
           listed_at?: string | null
           location_display?: string | null
@@ -284,6 +286,7 @@ export type Database = {
           featured?: boolean | null
           id?: string
           image_count?: number | null
+          image_urls?: string[]
           imported_listing_id?: string | null
           listed_at?: string | null
           location_display?: string | null
