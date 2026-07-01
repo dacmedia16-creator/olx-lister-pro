@@ -17,7 +17,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const BUCKET = "olx-images";
 const PROMPT = "Melhore a nitidez, iluminação, exposição e cores desta foto de imóvel. NÃO altere o ambiente, móveis, layout, cores das paredes, piso ou qualquer elemento da cena original — preserve 100% do conteúdo. Entregue no formato HORIZONTAL (paisagem 3:2). Se a foto original for vertical, faça outpainting realista estendendo naturalmente parede, piso, teto e iluminação para preencher as laterais do quadro. NUNCA deixe faixas brancas, cinzas ou bordas — a imagem inteira deve parecer UMA FOTO ÚNICA e coerente.";
-const RETRY_PROMPT = PROMPT + " ATENÇÃO: a tentativa anterior deixou faixas brancas nas laterais — desta vez REMOVA COMPLETAMENTE qualquer área branca e substitua por continuação realista da parede/piso/teto.";
+// RETRY_PROMPT removido junto com detecção de faixas brancas.
 const MODEL = "gpt-image-1";
 const IMAGE_SIZE = "1536x1024"; // horizontal 3:2
 const TARGET_W = 1536;
