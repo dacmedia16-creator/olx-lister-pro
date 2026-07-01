@@ -1,5 +1,5 @@
 // Edge Function: import-olx-listing
-// Recebe URLs de anúncios OLX, chama a GeckoAPI, salva no banco e baixa imagens.
+// Recebe URLs de anúncios OLX, chama a GeckoAPI (PDP), salva no banco e baixa imagens.
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
@@ -29,13 +29,8 @@ function isValidOlxUrl(u: string): boolean {
 }
 
 async function sha256(input: string): Promise<string> {
-  const buf = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(input),
-  );
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 function extFromUrl(url: string, contentType?: string | null): string {
@@ -58,14 +53,12 @@ function mapGeckoStatusMessage(status: number): string {
   return `Erro HTTP ${status}`;
 }
 
-type GeckoResponse = {
-  notFound?: boolean;
-  requestId?: string;
-  executionId?: string;
-  extractedAt?: string;
-  data?: any;
-  [k: string]: any;
-};
+// Obtém o objeto principal do anúncio de acordo com o encapsulamento retornado pela GeckoAPI.
+function getListingRoot(gecko: any): any {
+  if (gecko?.data?.data && typeof gecko.data.data === "object") return gecko.data.data;
+  if (gecko?.data && typeof gecko.data === "object") return gecko.data;
+  return gecko ?? {};
+}
 
 function pick<T = any>(obj: any, keys: string[]): T | undefined {
   for (const k of keys) {
@@ -81,33 +74,37 @@ function pick<T = any>(obj: any, keys: string[]): T | undefined {
   return undefined;
 }
 
-async function extractImageUrls(payload: any): Promise<string[]> {
+function extractImageUrls(gecko: any): string[] {
+  const listing = getListingRoot(gecko);
   const candidates: any[] = [
-    payload?.images,
-    payload?.photos,
-    payload?.data?.images,
-    payload?.data?.photos,
-    payload?.data?.ad?.images,
-    payload?.data?.listing?.images,
+    listing?.images,
+    listing?.photos,
+    gecko?.data?.data?.images,
+    gecko?.data?.data?.photos,
+    gecko?.data?.images,
+    gecko?.data?.photos,
+    gecko?.images,
+    gecko?.photos,
   ];
   for (const c of candidates) {
     if (Array.isArray(c) && c.length > 0) {
-      return c
+      const urls = c
         .map((item: any) =>
           typeof item === "string"
             ? item
             : item?.url || item?.original || item?.src || item?.href,
         )
         .filter((u: any) => typeof u === "string" && u.startsWith("http"));
+      if (urls.length > 0) return urls;
     }
   }
   return [];
 }
 
-async function mapListing(user_id: string, source_url: string, gecko: GeckoResponse) {
-  const d = gecko?.data ?? gecko;
-  const seller = pick<any>(d, ["seller", "user", "advertiser", "data.seller"]) ?? {};
-  const location = pick<any>(d, ["location", "address", "data.location"]) ?? {};
+async function mapListing(user_id: string, source_url: string, gecko: any) {
+  const d = getListingRoot(gecko);
+  const seller = pick<any>(d, ["seller", "user", "advertiser"]) ?? {};
+  const location = pick<any>(d, ["location", "address"]) ?? {};
   const phones: any[] =
     pick<any[]>(d, ["seller.phones", "phones", "contact.phones"]) ?? [];
   const phoneHashes = await Promise.all(
@@ -157,20 +154,13 @@ Deno.serve(async (req) => {
 
   try {
     const authHeader = req.headers.get("Authorization") ?? "";
-    if (!authHeader.startsWith("Bearer ")) {
-      return json({ error: "Não autenticado" }, 401);
-    }
+    if (!authHeader.startsWith("Bearer ")) return json({ error: "Não autenticado" }, 401);
+    if (!GECKO_API_KEY) return json({ error: "GECKO_API_KEY não configurada" }, 500);
 
-    if (!GECKO_API_KEY) {
-      return json({ error: "GECKO_API_KEY não configurada" }, 500);
-    }
-
-    // Client como usuário (respeita RLS) para inserts do banco
     const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    // Admin para storage
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
@@ -191,18 +181,17 @@ Deno.serve(async (req) => {
       return json({ error: "URLs inválidas. Apenas olx.com.br é permitido.", invalid }, 400);
     }
 
-    // Cria job
     const { data: jobIns, error: jobErr } = await userClient
       .from("olx_import_jobs")
       .insert({ user_id, status: "processing", total_urls: urls.length })
-      .select()
-      .single();
+      .select().single();
     if (jobErr) return json({ error: jobErr.message }, 500);
     const jobId = jobIns.id;
 
     let successful = 0;
     let failed = 0;
     let notFoundCount = 0;
+    const importedListingIds: Record<string, string> = {};
 
     for (const url of urls) {
       try {
@@ -225,7 +214,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const gecko = (await resp.json()) as GeckoResponse;
+        const gecko = await resp.json();
 
         if (gecko?.notFound === true) {
           notFoundCount++;
@@ -241,8 +230,7 @@ Deno.serve(async (req) => {
         const { data: listingRow, error: upErr } = await userClient
           .from("olx_listings")
           .upsert(mapped, { onConflict: "user_id,source_url" })
-          .select()
-          .single();
+          .select().single();
         if (upErr) {
           failed++;
           await userClient.from("processing_logs").insert({
@@ -252,49 +240,54 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Imagens
-        const imageUrls = await extractImageUrls(gecko);
-        // remove imagens antigas do listing para evitar duplicidade
-        await userClient.from("listing_images").delete().eq("listing_id", listingRow.id);
+        importedListingIds[url] = listingRow.id;
 
-        for (let i = 0; i < imageUrls.length; i++) {
-          const imgUrl = imageUrls[i];
-          const { data: imgRow, error: imgErr } = await userClient
-            .from("listing_images")
-            .insert({
-              user_id, listing_id: listingRow.id,
-              original_external_url: imgUrl, status: "pending", position: i,
-            })
-            .select()
-            .single();
-          if (imgErr || !imgRow) continue;
+        // Imagens: só apagar as antigas se novas foram extraídas com sucesso
+        const imageUrls = extractImageUrls(gecko);
+        if (imageUrls.length === 0) {
+          await userClient.from("processing_logs").insert({
+            user_id, job_id: jobId, listing_id: listingRow.id,
+            type: "image", status: "warning",
+            message: "Nenhuma imagem retornada pelo PDP; imagens antigas preservadas",
+            metadata_json: { url },
+          });
+        } else {
+          await userClient.from("listing_images").delete().eq("listing_id", listingRow.id);
 
-          try {
-            const imgResp = await fetch(imgUrl);
-            if (!imgResp.ok) throw new Error(`HTTP ${imgResp.status}`);
-            const ct = imgResp.headers.get("content-type");
-            const ext = extFromUrl(imgUrl, ct);
-            const buf = new Uint8Array(await imgResp.arrayBuffer());
-            const path = `${user_id}/${listingRow.id}/${imgRow.id}.${ext}`;
-            const { error: upErr2 } = await admin.storage
-              .from(BUCKET)
-              .upload(path, buf, {
-                contentType: ct ?? `image/${ext}`,
-                upsert: true,
+          for (let i = 0; i < imageUrls.length; i++) {
+            const imgUrl = imageUrls[i];
+            const { data: imgRow, error: imgErr } = await userClient
+              .from("listing_images")
+              .insert({
+                user_id, listing_id: listingRow.id,
+                original_external_url: imgUrl, status: "pending", position: i,
+              })
+              .select().single();
+            if (imgErr || !imgRow) continue;
+
+            try {
+              const imgResp = await fetch(imgUrl);
+              if (!imgResp.ok) throw new Error(`HTTP ${imgResp.status}`);
+              const ct = imgResp.headers.get("content-type");
+              const ext = extFromUrl(imgUrl, ct);
+              const buf = new Uint8Array(await imgResp.arrayBuffer());
+              const path = `${user_id}/${listingRow.id}/${imgRow.id}.${ext}`;
+              const { error: upErr2 } = await admin.storage.from(BUCKET)
+                .upload(path, buf, { contentType: ct ?? `image/${ext}`, upsert: true });
+              if (upErr2) throw upErr2;
+              await userClient.from("listing_images").update({
+                status: "downloaded", original_storage_path: path,
+              }).eq("id", imgRow.id);
+            } catch (e: any) {
+              await userClient.from("listing_images").update({
+                status: "failed", error_message: String(e?.message ?? e),
+              }).eq("id", imgRow.id);
+              await userClient.from("processing_logs").insert({
+                user_id, job_id: jobId, listing_id: listingRow.id, image_id: imgRow.id,
+                type: "image", status: "error",
+                message: String(e?.message ?? e), metadata_json: { url: imgUrl },
               });
-            if (upErr2) throw upErr2;
-            await userClient.from("listing_images").update({
-              status: "downloaded", original_storage_path: path,
-            }).eq("id", imgRow.id);
-          } catch (e: any) {
-            await userClient.from("listing_images").update({
-              status: "failed", error_message: String(e?.message ?? e),
-            }).eq("id", imgRow.id);
-            await userClient.from("processing_logs").insert({
-              user_id, job_id: jobId, listing_id: listingRow.id, image_id: imgRow.id,
-              type: "image", status: "error",
-              message: String(e?.message ?? e), metadata_json: { url: imgUrl },
-            });
+            }
           }
         }
 
@@ -311,23 +304,25 @@ Deno.serve(async (req) => {
           message: String(e?.message ?? e), metadata_json: { url },
         });
       } finally {
-        await userClient
-          .from("olx_import_jobs")
-          .update({ processed_urls: successful + failed })
-          .eq("id", jobId);
+        await userClient.from("olx_import_jobs")
+          .update({ processed_urls: successful + failed }).eq("id", jobId);
       }
     }
 
-    await userClient
-      .from("olx_import_jobs")
-      .update({
-        status: "completed",
-        successful_count: successful,
-        failed_count: failed,
-        processed_urls: successful + failed,
-        finished_at: new Date().toISOString(),
-      })
-      .eq("id", jobId);
+    // Atualiza olx_search_results.imported_listing_id para as URLs importadas
+    for (const [url, listingId] of Object.entries(importedListingIds)) {
+      await userClient.from("olx_search_results")
+        .update({ imported_listing_id: listingId })
+        .eq("user_id", user_id).eq("source_url", url);
+    }
+
+    await userClient.from("olx_import_jobs").update({
+      status: "completed",
+      successful_count: successful,
+      failed_count: failed,
+      processed_urls: successful + failed,
+      finished_at: new Date().toISOString(),
+    }).eq("id", jobId);
 
     return json({ jobId, successful, failed, notFound: notFoundCount });
   } catch (e: any) {
