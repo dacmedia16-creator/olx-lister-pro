@@ -52,12 +52,85 @@ function extractAds(gecko: any): any[] {
 }
 
 function getAdUrl(ad: any): string {
-  return String(ad?.url ?? ad?.link ?? ad?.href ?? "");
+  return String(ad?.url ?? ad?.link ?? ad?.href ?? ad?.shareUrl ?? ad?.canonicalUrl ?? "");
 }
 
-function getAdId(ad: any): string | null {
-  const id = ad?.listingId ?? ad?.listing_id ?? ad?.adId ?? ad?.ad_id ?? ad?.id;
-  return id == null ? null : String(id);
+function collectIdCandidates(...values: unknown[]): string[] {
+  const out = new Set<string>();
+  for (const value of values) {
+    if (value == null) continue;
+    const raw = String(value).trim();
+    if (!raw) continue;
+    out.add(raw.toLowerCase());
+    for (const match of raw.matchAll(/\d{6,}/g)) out.add(match[0]);
+  }
+  return Array.from(out);
+}
+
+function getAdIds(ad: any): string[] {
+  return collectIdCandidates(
+    ad?.listingId,
+    ad?.listing_id,
+    ad?.listId,
+    ad?.list_id,
+    ad?.adId,
+    ad?.ad_id,
+    ad?.id,
+    ad?.code,
+    ad?.legacyId,
+    ad?.legacy_id,
+  );
+}
+
+function getUrlIds(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const u = new URL(raw);
+    return collectIdCandidates(u.pathname);
+  } catch {
+    return collectIdCandidates(String(raw).split("?")[0]);
+  }
+}
+
+function normalizeSlug(raw: string | null | undefined): string {
+  if (!raw) return "";
+  try {
+    const u = new URL(raw);
+    const last = u.pathname.split("/").filter(Boolean).at(-1) ?? "";
+    return decodeURIComponent(last).toLowerCase().replace(/-\d{6,}$/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  } catch {
+    const last = String(raw).split("?")[0].split("/").filter(Boolean).at(-1) ?? "";
+    return last.toLowerCase().replace(/-\d{6,}$/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  }
+}
+
+function getMatchInfo(sourceUrl: string, listingRoot?: any) {
+  return {
+    normalizedUrl: normalizeOlxUrlForMatch(sourceUrl),
+    ids: new Set([
+      ...collectIdCandidates(listingRoot?.listingId, listingRoot?.listing_id, listingRoot?.adId, listingRoot?.ad_id, listingRoot?.id),
+      ...getUrlIds(sourceUrl),
+    ]),
+    slug: normalizeSlug(sourceUrl),
+  };
+}
+
+function scoreAdMatch(ad: any, source: ReturnType<typeof getMatchInfo>) {
+  const adUrl = getAdUrl(ad);
+  const normalizedAdUrl = normalizeOlxUrlForMatch(adUrl);
+  const adIds = new Set([...getAdIds(ad), ...getUrlIds(adUrl)]);
+  const sharedIds = Array.from(adIds).filter((id) => source.ids.has(id));
+  const adSlug = normalizeSlug(adUrl);
+
+  let score = 0;
+  const reasons: string[] = [];
+  if (sharedIds.length > 0) { score += 100; reasons.push(`id:${sharedIds.slice(0, 3).join(",")}`); }
+  if (normalizedAdUrl && source.normalizedUrl && normalizedAdUrl === source.normalizedUrl) { score += 80; reasons.push("url_exact"); }
+  if (normalizedAdUrl && source.normalizedUrl && (normalizedAdUrl.includes(source.normalizedUrl) || source.normalizedUrl.includes(normalizedAdUrl))) { score += 45; reasons.push("url_contains"); }
+  if (adSlug && source.slug && adSlug === source.slug) { score += 45; reasons.push("slug_exact"); }
+  if (adSlug && source.slug && adSlug.length > 18 && source.slug.length > 18 && (adSlug.includes(source.slug) || source.slug.includes(adSlug))) { score += 25; reasons.push("slug_contains"); }
+
+  return { score, reasons, adUrl, normalizedAdUrl, adIds: Array.from(adIds), adSlug };
 }
 
 function normalizeOlxUrlForMatch(raw: string | null | undefined): string {
@@ -72,53 +145,117 @@ function normalizeOlxUrlForMatch(raw: string | null | undefined): string {
   }
 }
 
-function derivePlpFallbackUrl(sourceUrl: string, listingRoot?: any): string | null {
+function derivePlpFallbackUrls(sourceUrl: string, listingRoot?: any, title?: string | null): string[] {
+  const urls: string[] = [];
+  const add = (raw: string | null | undefined) => {
+    if (!raw) return;
+    try {
+      const normalized = new URL(raw).toString();
+      if (!urls.includes(normalized)) urls.push(normalized);
+    } catch {
+      // ignore invalid fallback candidates
+    }
+  };
+
   const attrs = Array.isArray(listingRoot?.attributes) ? listingRoot.attributes : [];
   const attrUrl = attrs
     .map((a: any) => typeof a?.url === "string" ? a.url : null)
     .find((u: string | null) => u && /olx\.com\.br\/imoveis/i.test(u) && !/\d{8,}/.test(u));
-  if (attrUrl) return attrUrl;
+  add(attrUrl);
 
   try {
     const u = new URL(sourceUrl);
     const parts = u.pathname.split("/").filter(Boolean);
-    if (parts.length < 2) return null;
-    const last = parts[parts.length - 1] ?? "";
-    const looksLikeListingSlug = /\d{8,}/.test(last) || last.includes("-");
-    const plpParts = looksLikeListingSlug ? parts.slice(0, -1) : parts;
-    if (plpParts.length === 0) return null;
-    return `${u.origin}/${plpParts.join("/")}`;
+    if (parts.length >= 2) {
+      const last = parts[parts.length - 1] ?? "";
+      const looksLikeListingSlug = /\d{8,}/.test(last) || last.includes("-");
+      const plpParts = looksLikeListingSlug ? parts.slice(0, -1) : parts;
+      if (plpParts.length > 0) add(`${u.origin}/${plpParts.join("/")}`);
+    }
   } catch {
-    return null;
+    // ignore malformed source URL; validation already happened upstream
   }
+
+  if (title) {
+    for (const base of [...urls]) {
+      try {
+        const u = new URL(base);
+        u.searchParams.set("q", title.replace(/\s+/g, " ").trim());
+        add(u.toString());
+      } catch {
+        // ignore invalid candidate
+      }
+    }
+  }
+
+  return urls.slice(0, 4);
 }
 
-async function fetchPlpFallbackImages(url: string, listingId: string | null, apiKey: string, listingRoot?: any) {
-  const plpUrl = derivePlpFallbackUrl(url, listingRoot);
-  if (!plpUrl) return { urls: [] as string[], plpUrl: null as string | null, itemCount: 0, matched: false, requestId: null as string | null };
-
-  const r = await callGecko(
-    { target: "olx.com.br", type: "plp", url: plpUrl },
-    { apiKey, label: "plp-image-fallback", retries: 0, timeoutMs: 18000 },
-  );
-  if (!r.ok || r.body?.notFound === true) {
-    return { urls: [] as string[], plpUrl, itemCount: 0, matched: false, requestId: r.requestId ?? null };
+async function fetchPlpFallbackImages(url: string, apiKey: string, listingRoot?: any, title?: string | null) {
+  const plpUrls = derivePlpFallbackUrls(url, listingRoot, title);
+  if (plpUrls.length === 0) {
+    return { urls: [] as string[], plpUrl: null as string | null, itemCount: 0, matched: false, requestId: null as string | null, attempts: [] as any[] };
   }
 
-  const ads = extractAds(r.body);
-  const sourceMatch = normalizeOlxUrlForMatch(url);
-  const matched = ads.find((ad) => {
-    const adId = getAdId(ad);
-    const adUrl = normalizeOlxUrlForMatch(getAdUrl(ad));
-    return (listingId && adId === listingId) || (adUrl && sourceMatch && (adUrl === sourceMatch || sourceMatch.includes(adUrl) || adUrl.includes(sourceMatch)));
-  });
-  const target = matched;
+  const source = getMatchInfo(url, listingRoot);
+  const attempts: any[] = [];
+  let lastRequestId: string | null = null;
+  let lastItemCount = 0;
+
+  for (const plpUrl of plpUrls) {
+    const r = await callGecko(
+      { target: "olx.com.br", type: "plp", url: plpUrl },
+      { apiKey, label: "plp-image-fallback", retries: 0, timeoutMs: 18000 },
+    );
+    lastRequestId = r.requestId ?? null;
+    if (!r.ok || r.body?.notFound === true) {
+      attempts.push({ url: plpUrl, ok: false, status: r.status, request_id: lastRequestId });
+      continue;
+    }
+
+    const ads = extractAds(r.body);
+    lastItemCount = ads.length;
+    const scored = ads
+      .map((ad) => ({ ad, match: scoreAdMatch(ad, source) }))
+      .sort((a, b) => b.match.score - a.match.score);
+    const best = scored[0]?.match ?? null;
+    const matched = scored.find((x) => x.match.score >= 45 && x.match.reasons.some((r) => r.startsWith("id:") || r === "url_exact" || r === "url_contains" || r === "slug_exact"));
+
+    attempts.push({
+      url: plpUrl,
+      ok: true,
+      item_count: ads.length,
+      request_id: lastRequestId,
+      source_ids: Array.from(source.ids).slice(0, 6),
+      source_slug: source.slug,
+      best_score: best?.score ?? 0,
+      best_reasons: best?.reasons ?? [],
+      best_url: best?.adUrl ?? null,
+      matched: Boolean(matched),
+    });
+
+    if (matched) {
+      const urls = extractPlpImages(matched.ad);
+      if (urls.length > 0) {
+        return {
+          urls,
+          plpUrl,
+          itemCount: ads.length,
+          matched: true,
+          requestId: lastRequestId,
+          attempts,
+        };
+      }
+    }
+  }
+
   return {
-    urls: target ? extractPlpImages(target) : [],
-    plpUrl,
-    itemCount: ads.length,
-    matched: Boolean(matched),
-    requestId: r.requestId ?? r.body?.requestId ?? null,
+    urls: [] as string[],
+    plpUrl: plpUrls[plpUrls.length - 1] ?? null,
+    itemCount: lastItemCount,
+    matched: false,
+    requestId: lastRequestId,
+    attempts,
   };
 }
 

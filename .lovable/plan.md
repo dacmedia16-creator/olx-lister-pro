@@ -1,35 +1,38 @@
 ## Diagnóstico
 
-Ao inspecionar o anúncio `0adfa05f...` (Sorocaba, ID `1486041563`), as 9 fotos salvas vieram da rota de **fallback PLP**, não do PDP real. O log confirma: quando o PDP da GeckoAPI retorna `images: []`, o código busca a página de categoria (PLP) e, se não consegue casar o anúncio pelo ID/URL, usa `ads[0]` — ou seja, **o primeiro anúncio qualquer daquela categoria**. Por isso aparecem fotos de outros imóveis.
+O anúncio importado mais recente está sem fotos porque:
 
-Dois pontos do código causam isso:
+- A resposta PDP da GeckoAPI veio com `images: []`.
+- O fallback PLP encontrou 50 itens, mas não encontrou correspondência exata com o anúncio importado.
+- Como corrigimos antes para não pegar fotos do primeiro anúncio aleatório, o sistema preferiu salvar 0 fotos em vez de trazer fotos erradas.
 
-1. `supabase/functions/import-olx-listing/index.ts:115` — `const target = matched ?? ads[0];` (fallback cego para o primeiro item).
-2. `supabase/functions/_shared/gecko.ts` — `collectDeepImageUrls` varre a resposta PDP inteira, então pode capturar imagens de "anúncios similares/recomendados" embutidas no JSON, misturando com as do próprio anúncio.
+Isso evita contaminação, mas ainda deixa o anúncio sem imagem quando a GeckoAPI PDP não entrega fotos.
 
-## Correção proposta
+## Plano de correção
 
-**1) Fallback PLP só quando houver match confirmado**
-- Em `fetchPlpFallbackImages`: retornar `[]` se `matched` for falso. Sem `ads[0]`.
-- Registrar em `processing_logs` `plp_fallback.matched=false` com aviso "sem match, imagens ignoradas".
+1. **Melhorar a correspondência PDP ↔ PLP**
+   - Normalizar melhor os IDs e URLs da OLX.
+   - Comparar `listingId`, `adId`, slug da URL e ID numérico final do anúncio.
+   - Remover parâmetros como `?lis=...` antes da comparação.
 
-**2) Reduzir escopo do deep scan do PDP**
-- No `extractPdpImageDiagnostics`, varrer só a subárvore do próprio anúncio: `gecko.data.data` (ou `gecko.data` quando não há aninhamento), **excluindo** chaves conhecidas de listas paralelas (`related`, `similar`, `suggestions`, `recommendations`, `otherAds`, `items`, `ads`).
-- Preferir sempre `fieldImages` (campos oficiais `images/photos/media/gallery`). Só usar `deepImages` como complemento se `fieldImages.length === 0`.
+2. **Fazer fallback PLP seguro por busca direcionada**
+   - Em vez de usar apenas a URL de categoria ampla, tentar uma busca mais específica com o título do anúncio.
+   - Usar fotos somente se o item encontrado bater com ID/URL/slug do anúncio.
+   - Continuar proibindo fallback cego para o primeiro item.
 
-**3) Rastreabilidade na UI**
-- Persistir a origem das fotos por anúncio: adicionar coluna `images_source text` em `olx_listings` (valores: `pdp`, `pdp_retry`, `plp_fallback`, `none`).
-- Em `listings.$id.tsx`, mostrar um badge discreto quando `images_source !== 'pdp'`, informando: "Fotos obtidas via busca da categoria (podem estar desatualizadas)" — e quando `none`, o card já existente de "sem fotos" continua.
+3. **Preservar fotos boas já existentes**
+   - Se uma reimportação vier com 0 fotos, não apagar fotos anteriores.
+   - Atualizar `images_source` para indicar claramente quando não houve novas imagens.
 
-**4) Limpar registros contaminados**
-- Migração one-shot: apagar linhas de `listing_images` de anúncios cujo último log indica `image_source in ('plp_fallback')` com `matched=false`, para que a próxima reimportação traga o estado correto (ou vazio, se o PDP não fornecer imagens).
+4. **Adicionar logs de diagnóstico úteis**
+   - Registrar IDs comparados, URLs normalizadas, quantidade de candidatos PLP e motivo de não-match.
+   - Assim fica claro se o problema é falta de imagem na GeckoAPI ou falha de matching.
+
+5. **Reimplantar e testar**
+   - Reimplantar `import-olx-listing`.
+   - Reimportar o anúncio atual.
+   - Confirmar no banco se `listing_images` recebeu URLs corretas ou se o log mostra que a GeckoAPI não retornou fotos correspondentes.
 
 ## Resultado esperado
 
-- Se o PDP tiver fotos → aparecem exatamente essas.
-- Se o PDP não tiver fotos e o PLP casar o anúncio pelo ID/URL → usamos as thumbs do próprio anúncio (com badge de origem).
-- Se nada casar → mostramos "sem fotos" em vez de fotos de outro imóvel.
-
-## Fora do escopo
-
-- Não vamos tentar scrapear o site da OLX diretamente — o app usa apenas a GeckoAPI conforme combinado.
+O sistema só vai exibir fotos quando forem do anúncio correto. Se a GeckoAPI não fornecer fotos do anúncio no PDP nem permitir match seguro no PLP, a tela continuará sem foto, mas com log explicando exatamente o motivo — sem risco de mostrar fotos de outro imóvel.
