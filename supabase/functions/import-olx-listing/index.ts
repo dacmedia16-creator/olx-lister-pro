@@ -352,10 +352,11 @@ Deno.serve(async (req) => {
     const importedListingIds: Record<string, string> = {};
 
     for (const url of urls) {
+      const portal = detectPortal(url)!;
       try {
         const pdp = await callGecko(
-          { target: "olx.com.br", type: "pdp", url },
-          { apiKey: GECKO_API_KEY, label: "pdp-import" },
+          geckoPayloadFor(portal, url),
+          { apiKey: GECKO_API_KEY, label: `pdp-import-${portal}` },
         );
 
         if (!pdp.ok) {
