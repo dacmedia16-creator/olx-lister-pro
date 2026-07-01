@@ -12,8 +12,18 @@ export function normalizeUrl(raw: unknown): string | null {
   else if (u.startsWith("http://")) u = "https://" + u.slice(7);
   if (!/^https:\/\//i.test(u)) return null;
   u = u.replace(/\\u002F/g, "/").replace(/&amp;/g, "&");
+  // Resolve placeholders usados pelo CDN do ZAP/Viva Real (resizedimgs.vivareal.com / zapimoveis).
+  // Ex.: https://resizedimgs.vivareal.com/{action}/{width}x{height}/vr.images.sp/<hash>.webp
+  if (u.includes("{")) {
+    u = u
+      .replace(/\{action\}/gi, "fit-in")
+      .replace(/\{width\}x\{height\}/gi, "1200x900")
+      .replace(/\{width\}/gi, "1200")
+      .replace(/\{height\}/gi, "900");
+  }
   return u;
 }
+
 
 // Extract candidate URL from an image-like object (or plain string).
 function pickUrl(item: any): string | null {
