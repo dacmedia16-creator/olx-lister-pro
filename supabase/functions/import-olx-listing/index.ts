@@ -259,6 +259,75 @@ async function fetchPlpFallbackImages(url: string, apiKey: string, listingRoot?:
 
 async function mapListing(user_id: string, source_url: string, gecko: any, portal: Portal) {
   const d = getListingRoot(gecko);
+
+  if (portal === "zap") {
+    const address = pick<any>(d, ["address"]) ?? {};
+    const advertiser = pick<any>(d, ["advertiser"]) ?? {};
+    const prices = pick<any>(d, ["prices"]) ?? {};
+
+    const rawPhones: string[] = [];
+    const phoneList = advertiser?.phoneNumbers;
+    if (Array.isArray(phoneList)) rawPhones.push(...phoneList.filter((p: any) => typeof p === "string"));
+    if (typeof advertiser?.mainPhone === "string") rawPhones.push(advertiser.mainPhone);
+    if (typeof advertiser?.whatsAppNumber === "string") rawPhones.push(advertiser.whatsAppNumber);
+    const uniqPhones = Array.from(new Set(rawPhones.filter(Boolean)));
+    const phoneHashes = await Promise.all(uniqPhones.map((p) => sha256(p)));
+
+    let sellerHash: string | null = null;
+    if (advertiser?.name) sellerHash = await sha256(String(advertiser.name));
+
+    const priceValue = typeof prices?.price === "number" ? prices.price : null;
+
+    const attributes = {
+      amenities: Array.isArray(d?.amenities) ? d.amenities : null,
+      mainAmenities: Array.isArray(d?.mainAmenities) ? d.mainAmenities : null,
+      infoTags: Array.isArray(d?.infoTags) ? d.infoTags : null,
+      monthlyCondoFee: prices?.monthlyCondoFee ?? null,
+      iptu: prices?.iptu ?? null,
+      rentalPeriod: prices?.rentalPeriod ?? null,
+      rentalWarranties: prices?.rentalWarranties ?? null,
+      virtualTourUrl: d?.virtualTourUrl ?? null,
+      condominiumName: d?.condominiumName ?? null,
+      formattedAddress: d?.formattedAddress ?? null,
+      publicationType: d?.publicationType ?? null,
+      creci: advertiser?.creci ?? null,
+    };
+
+    return {
+      user_id,
+      source: geckoSourceLabel(portal),
+      source_portal: portal,
+      source_url,
+      listing_id: d?.listingId ? String(d.listingId) : null,
+      ad_id: d?.listingExternalId ? String(d.listingExternalId) : null,
+      title: d?.title ?? d?.metaTitle ?? null,
+      description: d?.description ?? null,
+      price: priceValue,
+      currency: "BRL",
+      listed_at: d?.createdAt ?? d?.updatedAt ?? null,
+      category: d?.listingType ?? null,
+      main_category: d?.businessType ?? null,
+      sub_category: d?.listingType ?? null,
+      state: address?.stateAcronym ?? address?.state ?? null,
+      city: address?.city ?? null,
+      neighborhood: address?.neighborhood ?? null,
+      region: null,
+      ddd: null,
+      zip_code: address?.zipCode ?? null,
+      seller_id: advertiser?.id ? String(advertiser.id) : null,
+      seller_name_hash: sellerHash,
+      seller_is_professional: true,
+      phone_hashes: phoneHashes.length ? phoneHashes : null,
+      attributes_json: attributes,
+      olx_pay_enabled: null,
+      olx_delivery_enabled: null,
+      request_id: gecko?.requestId ?? null,
+      execution_id: gecko?.executionId ?? null,
+      extracted_at: gecko?.data?.extractedAt ?? gecko?.extractedAt ?? null,
+    };
+  }
+
+  // OLX mapping (original)
   const seller = pick<any>(d, ["seller", "user", "advertiser", "account", "publisher"]) ?? {};
   const location = pick<any>(d, ["location", "address"]) ?? {};
 
@@ -316,6 +385,7 @@ async function mapListing(user_id: string, source_url: string, gecko: any, porta
     extracted_at: gecko?.data?.extractedAt ?? gecko?.extractedAt ?? null,
   };
 }
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
