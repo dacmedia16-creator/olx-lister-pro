@@ -150,6 +150,9 @@ function ListingsPage() {
                         </span>
                       </>
                     )}
+                    <span className={`absolute left-2 top-2 rounded px-1.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur ${l.source_portal === "zap" ? "bg-blue-600/90" : "bg-purple-600/90"}`}>
+                      {l.source_portal === "zap" ? "ZAP" : "OLX"}
+                    </span>
                   </div>
                   <CardContent className="space-y-1 py-3">
                     <div className="line-clamp-2 text-sm font-medium">{l.title ?? "(sem título)"}</div>
