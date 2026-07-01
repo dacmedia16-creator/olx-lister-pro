@@ -156,15 +156,29 @@ Deno.serve(async (req) => {
     let q = admin.from("listing_images").select("id,original_external_url,enhancement_status").eq("listing_id", listingId);
     if (imageIds && imageIds.length) q = q.in("id", imageIds);
     const { data: imgs } = await q;
-    const targets = (imgs ?? []).filter((i: any) => i.original_external_url);
+    const allTargets = (imgs ?? []).filter((i: any) => i.original_external_url);
 
-    // Marca todos como processing
+    // Limita quantas fotos processar por invocação (evita CPU Time exceeded)
+    const MAX_PER_CALL = 2;
+    const targets = allTargets.slice(0, MAX_PER_CALL);
+    const remaining_ids = allTargets.slice(MAX_PER_CALL).map((t: any) => t.id);
+
+    // Marca as que vão processar agora
     await admin.from("listing_images")
       .update({ enhancement_status: "processing", enhancement_prompt: PROMPT })
       .in("id", targets.map((t: any) => t.id));
 
     const TARGET_RATIO = TARGET_W / TARGET_H; // 16:9 ≈ 1.777
     const TOLERANCE = 0.03;
+
+    // Lê width/height direto do header PNG (bytes 16..24). Muito mais barato que decode.
+    function readPngSize(bytes: Uint8Array): { width: number; height: number } | null {
+      if (bytes.length < 24) return null;
+      // PNG signature: 89 50 4E 47 0D 0A 1A 0A
+      if (bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4e || bytes[3] !== 0x47) return null;
+      const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      return { width: dv.getUint32(16), height: dv.getUint32(20) };
+    }
 
     const results: Array<{ id: string; ok: boolean; error?: string; original_ratio?: number; final_ratio?: number; was_corrected?: boolean }> = [];
     for (const img of targets) {
@@ -176,24 +190,22 @@ Deno.serve(async (req) => {
         const b64 = await callGeminiEdit(dataUrl);
         let bytes = b64ToBytes(b64);
 
-        // Validação: garantir que a saída está em 16:9 horizontal
+        // Validação leve: lê apenas header PNG para pegar dimensões
         let originalRatio: number | undefined;
         let finalRatio: number | undefined;
         let wasCorrected = false;
-        try {
-          const decoded = await decodeImage(bytes) as Image;
-          originalRatio = decoded.width / decoded.height;
+        const size = readPngSize(bytes);
+        if (size && size.height > 0) {
+          originalRatio = size.width / size.height;
           const withinTol = Math.abs(originalRatio - TARGET_RATIO) / TARGET_RATIO <= TOLERANCE;
           if (!withinTol) {
             bytes = await toHorizontalCanvas(bytes);
-            const redecoded = await decodeImage(bytes) as Image;
-            finalRatio = redecoded.width / redecoded.height;
+            const sz2 = readPngSize(bytes);
+            finalRatio = sz2 ? sz2.width / sz2.height : undefined;
             wasCorrected = true;
           } else {
             finalRatio = originalRatio;
           }
-        } catch (decodeErr) {
-          throw new Error(`Falha ao decodificar imagem gerada: ${decodeErr instanceof Error ? decodeErr.message : String(decodeErr)}`);
         }
 
         const path = `${userId}/enhanced/${listingId}/${img.id}.png`;
@@ -219,6 +231,7 @@ Deno.serve(async (req) => {
       }
     }
 
+
     try {
       await admin.from("processing_logs").insert({
         user_id: userId,
@@ -230,10 +243,11 @@ Deno.serve(async (req) => {
       });
     } catch { /* noop */ }
 
-    return new Response(JSON.stringify({ results }), {
+    return new Response(JSON.stringify({ results, remaining_ids }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return new Response(JSON.stringify({ error: msg }), {
