@@ -598,7 +598,9 @@ function ListingDetail() {
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar tratamento com IA</AlertDialogTitle>
+            <AlertDialogTitle>
+              {confirmMode === "watermark_only" ? "Confirmar remoção de marca d'água" : "Confirmar tratamento com IA"}
+            </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-sm">
                 <div>
@@ -611,19 +613,27 @@ function ListingDetail() {
                     (~US$ {COST_PER_IMAGE_USD.toFixed(2)} por foto)
                   </span>
                 </div>
-                <div className="text-muted-foreground">
-                  Modo econômico ativo (qualidade baixa, ~US$ 0,02/foto). O resultado pode ter menos nitidez que no modo alto.
-                </div>
-                <div className="text-muted-foreground">
-                  Retratar sobrescreve as fotos já tratadas e gera novo custo.
-                </div>
+                {confirmMode === "watermark_only" ? (
+                  <div className="text-muted-foreground">
+                    Este modo apaga apenas logos/selos dos portais (OLX, ZAP, Viva Real) e mantém o resto da foto igual — mesma orientação, cores, enquadramento e nitidez.
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-muted-foreground">
+                      Modo econômico ativo (qualidade baixa, ~US$ 0,02/foto). O resultado pode ter menos nitidez que no modo alto.
+                    </div>
+                    <div className="text-muted-foreground">
+                      Retratar sobrescreve as fotos já tratadas e gera novo custo.
+                    </div>
+                  </>
+                )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setConfirmOpen(false); void enhance(); }}>
-              Confirmar e tratar
+            <AlertDialogAction onClick={() => { setConfirmOpen(false); void enhance(confirmMode); }}>
+              {confirmMode === "watermark_only" ? "Confirmar e remover" : "Confirmar e tratar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
