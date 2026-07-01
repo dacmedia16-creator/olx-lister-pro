@@ -86,6 +86,38 @@ function readPngSize(bytes: Uint8Array): { width: number; height: number } | nul
   return { width: dv.getUint32(16), height: dv.getUint32(20) };
 }
 
+function readJpegSize(bytes: Uint8Array): { width: number; height: number } | null {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let i = 2;
+  while (i < bytes.length) {
+    while (i < bytes.length && bytes[i] !== 0xff) i++;
+    while (i < bytes.length && bytes[i] === 0xff) i++;
+    if (i >= bytes.length) return null;
+    const marker = bytes[i]; i++;
+    if (marker === 0xd8 || marker === 0xd9 || marker === 0x00) continue;
+    if ((marker >= 0xc0 && marker <= 0xcf) && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      if (i + 7 > bytes.length) return null;
+      const h = dv.getUint16(i + 3);
+      const w = dv.getUint16(i + 5);
+      return { width: w, height: h };
+    }
+    if (i + 2 > bytes.length) return null;
+    const seg = dv.getUint16(i);
+    i += seg;
+  }
+  return null;
+}
+
+function pickSizeForOriginal(bytes: Uint8Array): string {
+  const size = readPngSize(bytes) ?? readJpegSize(bytes);
+  if (!size || size.height === 0) return "1024x1024";
+  const ratio = size.width / size.height;
+  if (ratio >= 1.2) return "1536x1024";
+  if (ratio <= 0.83) return "1024x1536";
+  return "1024x1024";
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405, headers: corsHeaders });
