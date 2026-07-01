@@ -125,8 +125,7 @@ Deno.serve(async (req) => {
       .update({ enhancement_status: "processing", enhancement_prompt: PROMPT })
       .in("id", targets.map((t: any) => t.id));
 
-    const TARGET_RATIO = TARGET_W / TARGET_H;
-    const TOLERANCE = 0.05;
+    // (TARGET_RATIO/TOLERANCE removidos — fallback de canvas foi eliminado.)
 
     const results: Array<{ id: string; ok: boolean; error?: string; original_ratio?: number; final_ratio?: number; was_corrected?: boolean; white_bars_detected?: boolean; retried?: boolean }> = [];
     for (const img of targets) {
