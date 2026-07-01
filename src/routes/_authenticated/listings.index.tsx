@@ -105,11 +105,16 @@ function ListingsPage() {
           {rows.map((l) => (
             <Link key={l.id} to="/listings/$id" params={{ id: l.id }} className="block">
               <Card className="h-full overflow-hidden transition-shadow hover:shadow-md">
-                <div className="aspect-video w-full overflow-hidden bg-muted">
+                <div className="relative aspect-video w-full overflow-hidden bg-muted">
                   {thumbs[l.id] ? (
                     <img src={thumbs[l.id]} alt={l.title ?? ""} className="h-full w-full object-cover" loading="lazy" />
                   ) : (
-                    <div className="flex h-full items-center justify-center text-xs text-muted-foreground">sem imagem</div>
+                    <>
+                      <div className="flex h-full items-center justify-center text-xs text-muted-foreground">sem imagem</div>
+                      <span className="absolute right-2 top-2 rounded bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground backdrop-blur">
+                        Sem fotos
+                      </span>
+                    </>
                   )}
                 </div>
                 <CardContent className="space-y-1 py-3">
