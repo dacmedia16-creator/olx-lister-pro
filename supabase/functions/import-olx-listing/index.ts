@@ -72,7 +72,13 @@ function normalizeOlxUrlForMatch(raw: string | null | undefined): string {
   }
 }
 
-function derivePlpFallbackUrl(sourceUrl: string): string | null {
+function derivePlpFallbackUrl(sourceUrl: string, listingRoot?: any): string | null {
+  const attrs = Array.isArray(listingRoot?.attributes) ? listingRoot.attributes : [];
+  const attrUrl = attrs
+    .map((a: any) => typeof a?.url === "string" ? a.url : null)
+    .find((u: string | null) => u && /olx\.com\.br\/imoveis/i.test(u) && !/\d{8,}/.test(u));
+  if (attrUrl) return attrUrl;
+
   try {
     const u = new URL(sourceUrl);
     const parts = u.pathname.split("/").filter(Boolean);
@@ -87,13 +93,13 @@ function derivePlpFallbackUrl(sourceUrl: string): string | null {
   }
 }
 
-async function fetchPlpFallbackImages(url: string, listingId: string | null, apiKey: string) {
-  const plpUrl = derivePlpFallbackUrl(url);
+async function fetchPlpFallbackImages(url: string, listingId: string | null, apiKey: string, listingRoot?: any) {
+  const plpUrl = derivePlpFallbackUrl(url, listingRoot);
   if (!plpUrl) return { urls: [] as string[], plpUrl: null as string | null, itemCount: 0, matched: false, requestId: null as string | null };
 
   const r = await callGecko(
     { target: "olx.com.br", type: "plp", url: plpUrl },
-    { apiKey, label: "plp-image-fallback", retries: 1 },
+    { apiKey, label: "plp-image-fallback", retries: 0, timeoutMs: 18000 },
   );
   if (!r.ok || r.body?.notFound === true) {
     return { urls: [] as string[], plpUrl, itemCount: 0, matched: false, requestId: r.requestId ?? null };
@@ -251,7 +257,7 @@ Deno.serve(async (req) => {
         }
 
         if (imageUrls.length === 0) {
-          plpFallback = await fetchPlpFallbackImages(url, mapped.listing_id, GECKO_API_KEY);
+          plpFallback = await fetchPlpFallbackImages(url, mapped.listing_id, GECKO_API_KEY, getListingRoot(gecko));
           if (plpFallback.urls.length > 0) {
             imageUrls = plpFallback.urls;
             imageSource = "plp_fallback";
