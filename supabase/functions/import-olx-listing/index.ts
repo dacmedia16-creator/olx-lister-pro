@@ -239,6 +239,21 @@ Deno.serve(async (req) => {
         }
 
         const mapped = await mapListing(user_id, url, gecko);
+
+        // Alerta defensivo: se o mapeamento não achou título, a resposta veio fora do schema.
+        if (!mapped.title) {
+          await userClient.from("processing_logs").insert({
+            user_id, job_id: jobId, type: "listing", status: "warning",
+            message: "Anúncio retornou sem dados principais (título nulo)",
+            metadata_json: {
+              url,
+              gecko_root_keys: gecko && typeof gecko === "object" ? Object.keys(gecko) : null,
+              gecko_data_keys: gecko?.data && typeof gecko.data === "object" ? Object.keys(gecko.data) : null,
+              gecko_data_data_keys: gecko?.data?.data && typeof gecko.data.data === "object" ? Object.keys(gecko.data.data) : null,
+            },
+          });
+        }
+
         const { data: listingRow, error: upErr } = await userClient
           .from("olx_listings")
           .upsert(mapped, { onConflict: "user_id,source_url" })
@@ -260,7 +275,7 @@ Deno.serve(async (req) => {
           await userClient.from("processing_logs").insert({
             user_id, job_id: jobId, listing_id: listingRow.id,
             type: "image", status: "warning",
-            message: "Nenhuma imagem retornada pelo PDP; imagens antigas preservadas",
+            message: "GeckoAPI devolveu 0 imagens para este anúncio (parser data_layer sem acesso às fotos); imagens antigas preservadas",
             metadata_json: { url },
           });
         } else {
