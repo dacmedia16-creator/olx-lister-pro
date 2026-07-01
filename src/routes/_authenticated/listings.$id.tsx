@@ -364,14 +364,17 @@ function ListingDetail() {
                   {showEnhanced ? "Ver originais" : "Ver tratadas"}
                 </Button>
               )}
-              <Button size="sm" onClick={openEnhanceConfirm} disabled={enhancing}>
+              <Button size="sm" variant="outline" onClick={() => openEnhanceConfirm("watermark_only")} disabled={enhancing}>
+                <Eraser className={`mr-2 h-4 w-4 ${enhancing ? "animate-pulse" : ""}`} />
+                Remover marca d'água
+              </Button>
+              <Button size="sm" onClick={() => openEnhanceConfirm("enhance")} disabled={enhancing}>
                 <Sparkles className={`mr-2 h-4 w-4 ${enhancing ? "animate-pulse" : ""}`} />
                 {enhancing
                   ? enhanceProgress
-                    ? `Tratando ${enhanceProgress.done}/${enhanceProgress.total}...`
-                    : "Tratando..."
+                    ? `Processando ${enhanceProgress.done}/${enhanceProgress.total}...`
+                    : "Processando..."
                   : hasAnyEnhanced ? "Retratar com IA" : "Tratar fotos com IA"}
-
               </Button>
               {hasAnyEnhanced && (
                 <Button size="sm" variant="secondary" onClick={downloadAll} disabled={downloadingZip}>
