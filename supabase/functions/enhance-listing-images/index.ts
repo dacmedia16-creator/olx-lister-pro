@@ -41,7 +41,7 @@ async function callOpenAiImageEdit(imageBytes: Uint8Array, promptText: string): 
   form.append("model", MODEL);
   form.append("prompt", promptText);
   form.append("size", IMAGE_SIZE);
-  form.append("quality", "low");
+  form.append("quality", "high");
   form.append("n", "1");
   form.append("image", new Blob([imageBytes], { type: "image/png" }), "input.png");
 
