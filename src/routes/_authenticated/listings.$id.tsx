@@ -183,7 +183,7 @@ function ListingDetail() {
     }
   }, [load]);
 
-  const enhance = useCallback(async () => {
+  const enhance = useCallback(async (mode: "enhance" | "watermark_only" = "enhance") => {
     setEnhancing(true);
     setEnhanceProgress(null);
     try {
@@ -197,7 +197,7 @@ function ListingDetail() {
         .filter((i: any) => i.original_external_url)
         .map((i: any) => i.id as string);
       if (queue.length === 0) {
-        toast.error("Nenhuma foto disponível para tratar");
+        toast.error("Nenhuma foto disponível para processar");
         return;
       }
       const total = queue.length;
@@ -208,7 +208,7 @@ function ListingDetail() {
       for (let i = 0; i < queue.length; i += BATCH) {
         const batch = queue.slice(i, i + BATCH);
         const { data, error } = await supabase.functions.invoke("enhance-listing-images", {
-          body: { listing_id: id, image_ids: batch },
+          body: { listing_id: id, image_ids: batch, mode },
         });
         if (error) throw error;
         const results = (data as { results?: Array<{ ok: boolean }> })?.results ?? [];
@@ -217,9 +217,13 @@ function ListingDetail() {
         setEnhanceProgress({ done, total });
         await load();
       }
-      toast.success(`Fotos tratadas: ${ok}/${total}`);
+      toast.success(
+        mode === "watermark_only"
+          ? `Marca d'água removida: ${ok}/${total}`
+          : `Fotos tratadas: ${ok}/${total}`,
+      );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Falha ao tratar fotos");
+      toast.error(e instanceof Error ? e.message : "Falha ao processar fotos");
     } finally {
       setEnhancing(false);
       setEnhanceProgress(null);
