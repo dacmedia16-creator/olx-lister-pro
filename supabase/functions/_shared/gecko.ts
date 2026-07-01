@@ -63,7 +63,7 @@ function collect(fields: any[]): string[] {
 const IMAGE_EXT_RE = /https?:\/\/[^\s"'<>\\]+?\.(?:jpe?g|png|webp)(?:\?[^\s"'<>\\]*)?/gi;
 const IMAGE_HOST_HINT_RE = /(img|image|photo|media|cdn|cloudfront|akamai|static)/i;
 
-function looksLikeImageUrl(raw: string): boolean {
+export function isLikelyImageUrl(raw: string): boolean {
   if (/\.(?:jpe?g|png|webp)(?:\?|$)/i.test(raw)) return true;
   try {
     const u = new URL(raw);
@@ -85,7 +85,7 @@ function collectDeepImageUrls(root: any, maxDepth = 7): string[] {
   function add(raw: unknown) {
     if (typeof raw !== "string") return;
     const direct = normalizeUrl(raw);
-    if (direct && looksLikeImageUrl(direct) && !seen.has(direct)) {
+    if (direct && isLikelyImageUrl(direct) && !seen.has(direct)) {
       seen.add(direct);
       out.push(direct);
     }
@@ -119,7 +119,7 @@ function collectDeepImageUrls(root: any, maxDepth = 7): string[] {
     for (const [key, child] of Object.entries(value)) {
       const keyLooksImage = /image|img|photo|picture|media|gallery|thumbnail|cover|url|src|href/i.test(key);
       if (typeof child === "string") {
-        if (keyLooksImage || looksLikeImageUrl(child)) add(child);
+        if (keyLooksImage || isLikelyImageUrl(child)) add(child);
       } else {
         walk(child, depth + 1);
       }
@@ -137,7 +137,7 @@ function mergeUrls(...groups: string[][]): string[] {
   for (const group of groups) {
     for (const u of group) {
       const n = normalizeUrl(u);
-      if (n && !seen.has(n)) {
+      if (n && isLikelyImageUrl(n) && !seen.has(n)) {
         seen.add(n);
         out.push(n);
       }
