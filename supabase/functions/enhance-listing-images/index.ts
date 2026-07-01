@@ -166,9 +166,11 @@ Deno.serve(async (req) => {
     const results: Array<{ id: string; ok: boolean; error?: string }> = [];
     for (const img of targets) {
       try {
-        const src = await fetchAsDataUrl(img.original_external_url!);
-        if (!src) throw new Error("Falha ao baixar imagem original");
-        const b64 = await callGeminiEdit(src.dataUrl);
+        const srcBytes = await fetchBytes(img.original_external_url!);
+        if (!srcBytes) throw new Error("Falha ao baixar imagem original");
+        const horizontalPng = await toHorizontalCanvas(srcBytes);
+        const dataUrl = bytesToDataUrl(horizontalPng, "image/png");
+        const b64 = await callGeminiEdit(dataUrl);
         const bytes = b64ToBytes(b64);
         const path = `${userId}/enhanced/${listingId}/${img.id}.png`;
         const { error: upErr } = await admin.storage.from(BUCKET).upload(path, bytes, {
