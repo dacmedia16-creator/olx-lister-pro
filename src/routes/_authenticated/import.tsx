@@ -76,7 +76,7 @@ function ImportPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Importar anúncios OLX</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Importar anúncios (OLX / ZAP Imóveis)</h1>
       <Card>
         <CardHeader><CardTitle>Novas URLs</CardTitle></CardHeader>
         <CardContent>
