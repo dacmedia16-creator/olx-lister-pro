@@ -118,10 +118,42 @@ function ListingDetail() {
 
   const hasImages = images.length > 0;
 
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteListing(id);
+      toast.success("Anúncio excluído");
+      navigate({ to: "/listings" });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao excluir");
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex items-center justify-between">
         <Link to="/listings" className="text-sm text-muted-foreground hover:underline">← Voltar</Link>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="destructive" size="sm" disabled={deleting}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              {deleting ? "Excluindo..." : "Excluir anúncio"}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir este anúncio?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta ação não pode ser desfeita. As imagens armazenadas também serão removidas.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDelete}>Excluir</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
