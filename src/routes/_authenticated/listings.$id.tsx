@@ -62,7 +62,7 @@ function ListingDetail() {
         signed = s ?? [];
       }
       const map = new Map(paths.map((p, i) => [p, signed[i]?.signedUrl]));
-      setImages(list.map((im) => ({ ...im, url: im.original_storage_path ? map.get(im.original_storage_path) : undefined })));
+      setImages(list.map((im) => ({ ...im, url: im.original_storage_path ? (map.get(im.original_storage_path) ?? undefined) : undefined })));
     })();
   }, [id]);
 
