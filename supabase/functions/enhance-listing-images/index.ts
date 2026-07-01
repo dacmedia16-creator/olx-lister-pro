@@ -14,7 +14,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 const BUCKET = "olx-images";
-const PROMPT = "Melhore a imagem sem mudar o ambiente, deixe na Vertical.";
+const PROMPT = "Melhore a imagem sem mudar o ambiente, deixe na horizontal.";
 const MODEL = "google/gemini-2.5-flash-image";
 
 async function fetchAsDataUrl(url: string): Promise<{ dataUrl: string; contentType: string } | null> {
