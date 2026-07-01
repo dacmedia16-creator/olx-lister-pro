@@ -370,6 +370,8 @@ function ListingDetail() {
                     const enhUrl = enhancedUrls[im.id];
                     const displaySrc = (showEnhanced && enhUrl) || im.original_external_url;
                     const isEnhanced = !!enhUrl && showEnhanced;
+                    const isProcessing = im.enhancement_status === "processing" || enhancingIds.has(im.id);
+                    const canEnhance = !!im.original_external_url;
                     return (
                       <div key={im.id} className="group relative aspect-square overflow-hidden rounded bg-muted">
                         {displaySrc ? (
@@ -386,25 +388,36 @@ function ListingDetail() {
                             {im.status === "failed" ? "falhou" : "—"}
                           </div>
                         )}
-                        {im.enhancement_status === "processing" && (
+                        {isProcessing && (
                           <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-[10px] text-white">
                             tratando…
                           </div>
                         )}
-                        {im.enhancement_status === "failed" && (
+                        {im.enhancement_status === "failed" && !isProcessing && (
                           <div className="absolute left-1 top-1 rounded bg-destructive px-1 text-[10px] text-destructive-foreground">falhou</div>
                         )}
                         {isEnhanced && (
-                          <>
-                            <div className="absolute left-1 top-1 rounded bg-primary px-1 text-[10px] text-primary-foreground">IA</div>
-                            <button
-                              type="button"
-                              onClick={() => downloadEnhanced(im.enhanced_storage_path!, `foto-${String(idx + 1).padStart(2, "0")}.png`)}
-                              className="absolute inset-x-1 bottom-1 flex items-center justify-center gap-1 rounded bg-black/70 px-1 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100"
-                            >
-                              <Download className="h-3 w-3" /> Baixar
-                            </button>
-                          </>
+                          <div className="absolute left-1 top-1 rounded bg-primary px-1 text-[10px] text-primary-foreground">IA</div>
+                        )}
+                        {canEnhance && !isProcessing && (
+                          <button
+                            type="button"
+                            onClick={() => enhanceOne(im.id)}
+                            disabled={enhancing}
+                            title={isEnhanced ? "Retratar com IA" : "Tratar com IA"}
+                            className="absolute right-1 top-1 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <Sparkles className="h-3 w-3" /> {isEnhanced ? "Retratar" : "Tratar"}
+                          </button>
+                        )}
+                        {isEnhanced && (
+                          <button
+                            type="button"
+                            onClick={() => downloadEnhanced(im.enhanced_storage_path!, `foto-${String(idx + 1).padStart(2, "0")}.png`)}
+                            className="absolute inset-x-1 bottom-1 flex items-center justify-center gap-1 rounded bg-black/70 px-1 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100"
+                          >
+                            <Download className="h-3 w-3" /> Baixar
+                          </button>
                         )}
                       </div>
                     );
