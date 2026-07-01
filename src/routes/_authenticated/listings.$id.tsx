@@ -141,6 +141,45 @@ function ListingDetail() {
     }
   }, [listing, load]);
 
+  const enhance = useCallback(async () => {
+    setEnhancing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("enhance-listing-images", {
+        body: { listing_id: id },
+      });
+      if (error) throw error;
+      const results = (data as { results?: Array<{ ok: boolean }> })?.results ?? [];
+      const ok = results.filter((r) => r.ok).length;
+      toast.success(`Fotos tratadas: ${ok}/${results.length}`);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao tratar fotos");
+    } finally {
+      setEnhancing(false);
+    }
+  }, [id, load]);
+
+  const enhancedList = useMemo(
+    () => images.filter((i) => i.enhanced_storage_path && i.enhancement_status === "done"),
+    [images],
+  );
+
+  const downloadAll = useCallback(async () => {
+    if (enhancedList.length === 0) return;
+    setDownloadingZip(true);
+    try {
+      const items = enhancedList.map((im, idx) => ({
+        path: im.enhanced_storage_path!,
+        name: `foto-${String(idx + 1).padStart(2, "0")}.png`,
+      }));
+      await downloadEnhancedZip(items, `anuncio-${id}.zip`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao gerar ZIP");
+    } finally {
+      setDownloadingZip(false);
+    }
+  }, [enhancedList, id]);
+
   if (!listing) return <p className="text-sm text-muted-foreground">Carregando...</p>;
 
   const attrs = listing.attributes_json && typeof listing.attributes_json === "object"
@@ -148,6 +187,7 @@ function ListingDetail() {
     : [];
 
   const hasImages = images.length > 0;
+  const hasAnyEnhanced = enhancedList.length > 0;
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -160,6 +200,7 @@ function ListingDetail() {
       setDeleting(false);
     }
   };
+
 
   return (
     <div className="space-y-6">
