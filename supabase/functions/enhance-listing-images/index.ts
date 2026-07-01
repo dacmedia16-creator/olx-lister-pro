@@ -2,7 +2,9 @@
 // Melhora as fotos de um anúncio via OpenAI API própria (gpt-image-1 edits)
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { decode as decodeImage, Image } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
+// imagescript removido: baixava wasm remoto em runtime e falhava (Connection refused) na Edge.
+// Como pedimos size=1536x1024 direto para a OpenAI, a resposta já vem em 3:2 e não precisamos
+// re-encaixar em canvas nem detectar faixas brancas via decodificação de pixel.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
