@@ -2,7 +2,9 @@
 // Melhora as fotos de um anúncio via OpenAI API própria (gpt-image-1 edits)
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { decode as decodeImage, Image } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
+// imagescript removido: baixava wasm remoto em runtime e falhava (Connection refused) na Edge.
+// Como pedimos size=1536x1024 direto para a OpenAI, a resposta já vem em 3:2 e não precisamos
+// re-encaixar em canvas nem detectar faixas brancas via decodificação de pixel.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,7 +17,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const BUCKET = "olx-images";
 const PROMPT = "Melhore a nitidez, iluminação, exposição e cores desta foto de imóvel. NÃO altere o ambiente, móveis, layout, cores das paredes, piso ou qualquer elemento da cena original — preserve 100% do conteúdo. Entregue no formato HORIZONTAL (paisagem 3:2). Se a foto original for vertical, faça outpainting realista estendendo naturalmente parede, piso, teto e iluminação para preencher as laterais do quadro. NUNCA deixe faixas brancas, cinzas ou bordas — a imagem inteira deve parecer UMA FOTO ÚNICA e coerente.";
-const RETRY_PROMPT = PROMPT + " ATENÇÃO: a tentativa anterior deixou faixas brancas nas laterais — desta vez REMOVA COMPLETAMENTE qualquer área branca e substitua por continuação realista da parede/piso/teto.";
+// RETRY_PROMPT removido junto com detecção de faixas brancas.
 const MODEL = "gpt-image-1";
 const IMAGE_SIZE = "1536x1024"; // horizontal 3:2
 const TARGET_W = 1536;
@@ -29,25 +31,10 @@ async function fetchBytes(url: string): Promise<Uint8Array | null> {
   } catch { return null; }
 }
 
-// Fallback: encaixa foto em canvas horizontal 3:2 caso o modelo devolva com aspect errado.
-async function toHorizontalCanvas(bytes: Uint8Array): Promise<Uint8Array> {
-  const src = await decodeImage(bytes) as Image;
-  const srcW = src.width, srcH = src.height;
-  const targetRatio = TARGET_W / TARGET_H;
-  const srcRatio = srcW / srcH;
-  let drawW: number, drawH: number;
-  if (srcRatio > targetRatio) { drawW = TARGET_W; drawH = Math.round(TARGET_W / srcRatio); }
-  else { drawH = TARGET_H; drawW = Math.round(TARGET_H * srcRatio); }
-  const resized = src.clone().resize(drawW, drawH);
-  const canvas = new Image(TARGET_W, TARGET_H);
-  const bg = src.clone().resize(TARGET_W, TARGET_H);
-  try { (bg as any).blur(20); } catch { /* noop */ }
-  canvas.composite(bg, 0, 0);
-  const offX = Math.floor((TARGET_W - drawW) / 2);
-  const offY = Math.floor((TARGET_H - drawH) / 2);
-  canvas.composite(resized, offX, offY);
-  return await canvas.encode();
-}
+// Fallback removido — dependia de imagescript. Se a OpenAI devolver aspect fora do 3:2,
+// aceitamos a imagem como veio e marcamos was_corrected=false para auditoria.
+
+
 
 async function callOpenAiImageEdit(imageBytes: Uint8Array, promptText: string): Promise<Uint8Array> {
   const form = new FormData();
@@ -87,27 +74,9 @@ async function callOpenAiImageEdit(imageBytes: Uint8Array, promptText: string): 
   return out;
 }
 
-// Detecta faixas quase-brancas nas laterais.
-async function hasWhiteSideBars(bytes: Uint8Array): Promise<boolean> {
-  try {
-    const img = await decodeImage(bytes) as Image;
-    const w = img.width, h = img.height;
-    const colL = Math.max(1, Math.floor(w * 0.02));
-    const colR = Math.min(w - 1, Math.floor(w * 0.98));
-    const samples = 20;
-    let whites = 0, total = 0;
-    for (let i = 0; i < samples; i++) {
-      const y = Math.max(1, Math.floor((i + 0.5) * h / samples));
-      for (const x of [colL, colR]) {
-        const px = img.getPixelAt(x, y);
-        const r = (px >>> 24) & 0xff, g = (px >>> 16) & 0xff, b = (px >>> 8) & 0xff;
-        if (r > 245 && g > 245 && b > 245) whites++;
-        total++;
-      }
-    }
-    return total > 0 && whites / total > 0.7;
-  } catch { return false; }
-}
+// Detecção de faixas brancas removida — dependia de imagescript. Como pedimos outpainting
+// no prompt e size=1536x1024 direto, se aparecerem faixas o usuário pode "Retratar" a foto.
+
 
 // Lê width/height direto do header PNG.
 function readPngSize(bytes: Uint8Array): { width: number; height: number } | null {
@@ -156,8 +125,7 @@ Deno.serve(async (req) => {
       .update({ enhancement_status: "processing", enhancement_prompt: PROMPT })
       .in("id", targets.map((t: any) => t.id));
 
-    const TARGET_RATIO = TARGET_W / TARGET_H;
-    const TOLERANCE = 0.05;
+    // (TARGET_RATIO/TOLERANCE removidos — fallback de canvas foi eliminado.)
 
     const results: Array<{ id: string; ok: boolean; error?: string; original_ratio?: number; final_ratio?: number; was_corrected?: boolean; white_bars_detected?: boolean; retried?: boolean }> = [];
     for (const img of targets) {
@@ -167,36 +135,21 @@ Deno.serve(async (req) => {
 
         let bytes = await callOpenAiImageEdit(srcBytes, PROMPT);
 
-        // Retry se faixas brancas
-        let whiteBars = await hasWhiteSideBars(bytes);
-        let retried = false;
-        if (whiteBars) {
-          try {
-            const retryBytes = await callOpenAiImageEdit(srcBytes, RETRY_PROMPT);
-            retried = true;
-            const stillWhite = await hasWhiteSideBars(retryBytes);
-            bytes = retryBytes;
-            if (!stillWhite) whiteBars = false;
-          } catch { /* mantém primeira tentativa */ }
-        }
+        // Sem detecção de faixas brancas nem fallback de canvas (removidos junto com imagescript).
+        // A OpenAI já devolve em 1536x1024 conforme size solicitado.
+        const whiteBars = false;
+        const retried = false;
 
-        // Valida aspect ratio; se torto, encaixa em canvas horizontal
+        // Valida aspect ratio via header PNG (sem decodificar pixels).
         let originalRatio: number | undefined;
         let finalRatio: number | undefined;
-        let wasCorrected = false;
+        const wasCorrected = false;
         const size = readPngSize(bytes);
         if (size && size.height > 0) {
           originalRatio = size.width / size.height;
-          const withinTol = Math.abs(originalRatio - TARGET_RATIO) / TARGET_RATIO <= TOLERANCE;
-          if (!withinTol) {
-            bytes = await toHorizontalCanvas(bytes);
-            const sz2 = readPngSize(bytes);
-            finalRatio = sz2 ? sz2.width / sz2.height : undefined;
-            wasCorrected = true;
-          } else {
-            finalRatio = originalRatio;
-          }
+          finalRatio = originalRatio;
         }
+
 
         const path = `${userId}/enhanced/${listingId}/${img.id}.png`;
         const { error: upErr } = await admin.storage.from(BUCKET).upload(path, bytes, {
