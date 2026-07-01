@@ -104,7 +104,7 @@ function collectDeepImageUrls(root: any, maxDepth = 7): string[] {
   }
 
   function walk(value: any, depth: number) {
-    if (out.length >= 20 || value == null || depth > maxDepth) return;
+    if (out.length >= 40 || value == null || depth > maxDepth) return;
     if (typeof value === "string") {
       add(value);
       return;
@@ -127,12 +127,12 @@ function collectDeepImageUrls(root: any, maxDepth = 7): string[] {
       } else {
         walk(child, depth + 1);
       }
-      if (out.length >= 20) return;
+      if (out.length >= 40) return;
     }
   }
 
   walk(root, 0);
-  return out.slice(0, 20);
+  return out.slice(0, 40);
 }
 
 function mergeUrls(...groups: string[][]): string[] {
@@ -147,7 +147,7 @@ function mergeUrls(...groups: string[][]): string[] {
       }
     }
   }
-  return out.slice(0, 20);
+  return out.slice(0, 40);
 }
 
 export function extractPlpImages(item: any): string[] {
