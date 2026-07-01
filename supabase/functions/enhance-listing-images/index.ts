@@ -17,9 +17,9 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const BUCKET = "olx-images";
 const PROMPT = "Melhore esta foto de imóvel mantendo aparência de FOTOGRAFIA REAL, não renderização. Preserve 100% do ambiente, móveis, layout, texturas, cores das paredes, piso e todos os elementos da cena original. REMOÇÃO DE MARCA D'ÁGUA: se houver logo, selo, marca d'água, carimbo ou texto sobreposto dos portais OLX, OLX Brasil, ZAP, ZAP Imóveis, Viva Real ou qualquer portal imobiliário (em qualquer canto, faixa, centro, com transparência ou opaco) — remova COMPLETAMENTE reconstruindo de forma fotorrealista a parte do ambiente que estava coberta (parede, piso, teto, móvel, céu, fachada etc.), sem deixar borrão, mancha, contorno, halo ou fantasma da logo original. O resultado não pode conter nenhum vestígio de marca d'água. NITIDEZ CRÍTICA: preserve nitidez total de TODOS os objetos da cena, inclusive itens pequenos e ao fundo (garrafas, utensílios, panelas, eletrodomésticos, decoração, relógios, quadros, maçanetas, interruptores, tomadas, texturas de piso e parede). Nenhum item pode ficar desfocado, borrado, com contornos suavizados ou perder detalhes. PROIBIDO: blur, bokeh, profundidade de campo artificial, suavização de fundo, motion blur, qualquer tipo de desfoque seletivo. Ajustes permitidos: correção suave de exposição, balanço de branco neutro, remoção de leve desfoque de câmera (aumentando nitidez, nunca reduzindo), nitidez moderada e endireitamento sutil. PROIBIDO também: HDR exagerado, saturação artificial, superfícies plásticas ou cerâmicas idealizadas, aparência de render 3D, cores irreais, iluminação de estúdio, contraste excessivo, efeito de catálogo/revista. Mantenha iluminação natural equilibrada, sombras suaves preservadas e um leve ruído fotográfico aceitável. Entregue no formato HORIZONTAL (paisagem 3:2). Se a foto original for vertical, faça outpainting fotorrealista e NÍTIDO estendendo naturalmente parede, piso, teto e iluminação para preencher as laterais — NUNCA deixe faixas brancas, cinzas, bordas ou áreas desfocadas. A imagem inteira deve parecer UMA FOTO ÚNICA, real, nítida em toda a extensão e coerente, sem qualquer marca d'água.";
-// RETRY_PROMPT removido junto com detecção de faixas brancas.
+const WATERMARK_ONLY_PROMPT = "Sua ÚNICA tarefa é remover marcas d'água, logos, selos, carimbos e textos sobrepostos dos portais imobiliários (OLX, OLX Brasil, ZAP, ZAP Imóveis, Viva Real, ImovelWeb, QuintoAndar ou qualquer outro) que apareçam sobre esta foto, em qualquer canto, faixa, centro, com transparência ou opacos. Reconstrua de forma fotorrealista APENAS a parte do ambiente que estava coberta pela logo (parede, piso, teto, móvel, céu, fachada, textura etc.), sem deixar borrão, mancha, contorno, halo ou fantasma da marca original. PRESERVE 100% do restante da imagem EXATAMENTE como está: mesmo enquadramento, mesma composição, mesmas cores, mesma exposição, mesmo balanço de branco, mesmo nível de nitidez, mesmos móveis, mesmos objetos, mesma iluminação, mesmas sombras, mesmas texturas, mesmo ruído fotográfico. PROIBIDO: alterar cores, aumentar saturação, mudar contraste, aplicar HDR, aplicar blur ou bokeh, mudar a proporção/formato, recortar, girar, endireitar, adicionar ou remover objetos, mover móveis, mudar a hora do dia, mudar o clima, adicionar iluminação de estúdio, deixar com aparência de render 3D ou revista. Não é uma edição estética — é APENAS remoção de marca d'água com reconstrução invisível do fundo por trás dela. O resultado deve ser indistinguível da foto original a olho nu, exceto pela ausência total de qualquer logo ou marca d'água.";
 const MODEL = "gpt-image-1";
-const IMAGE_SIZE = "1536x1024"; // horizontal 3:2
+const IMAGE_SIZE = "1536x1024"; // horizontal 3:2 (modo enhance)
 const TARGET_W = 1536;
 const TARGET_H = 1024;
 
@@ -36,11 +36,11 @@ async function fetchBytes(url: string): Promise<Uint8Array | null> {
 
 
 
-async function callOpenAiImageEdit(imageBytes: Uint8Array, promptText: string): Promise<Uint8Array> {
+async function callOpenAiImageEdit(imageBytes: Uint8Array, promptText: string, sizeOverride?: string): Promise<Uint8Array> {
   const form = new FormData();
   form.append("model", MODEL);
   form.append("prompt", promptText);
-  form.append("size", IMAGE_SIZE);
+  form.append("size", sizeOverride || IMAGE_SIZE);
   form.append("quality", "low");
   form.append("n", "1");
   form.append("image", new Blob([imageBytes], { type: "image/png" }), "input.png");
@@ -86,6 +86,38 @@ function readPngSize(bytes: Uint8Array): { width: number; height: number } | nul
   return { width: dv.getUint32(16), height: dv.getUint32(20) };
 }
 
+function readJpegSize(bytes: Uint8Array): { width: number; height: number } | null {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let i = 2;
+  while (i < bytes.length) {
+    while (i < bytes.length && bytes[i] !== 0xff) i++;
+    while (i < bytes.length && bytes[i] === 0xff) i++;
+    if (i >= bytes.length) return null;
+    const marker = bytes[i]; i++;
+    if (marker === 0xd8 || marker === 0xd9 || marker === 0x00) continue;
+    if ((marker >= 0xc0 && marker <= 0xcf) && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      if (i + 7 > bytes.length) return null;
+      const h = dv.getUint16(i + 3);
+      const w = dv.getUint16(i + 5);
+      return { width: w, height: h };
+    }
+    if (i + 2 > bytes.length) return null;
+    const seg = dv.getUint16(i);
+    i += seg;
+  }
+  return null;
+}
+
+function pickSizeForOriginal(bytes: Uint8Array): string {
+  const size = readPngSize(bytes) ?? readJpegSize(bytes);
+  if (!size || size.height === 0) return "1024x1024";
+  const ratio = size.width / size.height;
+  if (ratio >= 1.2) return "1536x1024";
+  if (ratio <= 0.83) return "1024x1536";
+  return "1024x1024";
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405, headers: corsHeaders });
@@ -105,6 +137,8 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const listingId = body?.listing_id as string | undefined;
     const imageIds = Array.isArray(body?.image_ids) ? (body.image_ids as string[]) : null;
+    const mode = (body?.mode === "watermark_only" ? "watermark_only" : "enhance") as "enhance" | "watermark_only";
+    const activePrompt = mode === "watermark_only" ? WATERMARK_ONLY_PROMPT : PROMPT;
     if (!listingId) return new Response(JSON.stringify({ error: "listing_id required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     const { data: listing, error: lerr } = await admin.from("olx_listings").select("id,user_id").eq("id", listingId).maybeSingle();
@@ -122,18 +156,19 @@ Deno.serve(async (req) => {
     const remaining_ids = allTargets.slice(MAX_PER_CALL).map((t: any) => t.id);
 
     await admin.from("listing_images")
-      .update({ enhancement_status: "processing", enhancement_prompt: PROMPT })
+      .update({ enhancement_status: "processing", enhancement_prompt: activePrompt })
       .in("id", targets.map((t: any) => t.id));
 
     // (TARGET_RATIO/TOLERANCE removidos — fallback de canvas foi eliminado.)
 
-    const results: Array<{ id: string; ok: boolean; error?: string; original_ratio?: number; final_ratio?: number; was_corrected?: boolean; white_bars_detected?: boolean; retried?: boolean }> = [];
+    const results: Array<{ id: string; ok: boolean; error?: string; original_ratio?: number; final_ratio?: number; was_corrected?: boolean; white_bars_detected?: boolean; retried?: boolean; mode?: string }> = [];
     for (const img of targets) {
       try {
         const srcBytes = await fetchBytes(img.original_external_url!);
         if (!srcBytes) throw new Error("Falha ao baixar imagem original");
 
-        let bytes = await callOpenAiImageEdit(srcBytes, PROMPT);
+        const sizeArg = mode === "watermark_only" ? pickSizeForOriginal(srcBytes) : IMAGE_SIZE;
+        let bytes = await callOpenAiImageEdit(srcBytes, activePrompt, sizeArg);
 
         // Sem detecção de faixas brancas nem fallback de canvas (removidos junto com imagescript).
         // A OpenAI já devolve em 1536x1024 conforme size solicitado.
@@ -163,7 +198,7 @@ Deno.serve(async (req) => {
           enhanced_at: new Date().toISOString(),
           error_message: null,
         }).eq("id", img.id);
-        results.push({ id: img.id, ok: true, original_ratio: originalRatio, final_ratio: finalRatio, was_corrected: wasCorrected, white_bars_detected: whiteBars, retried });
+        results.push({ id: img.id, ok: true, original_ratio: originalRatio, final_ratio: finalRatio, was_corrected: wasCorrected, white_bars_detected: whiteBars, retried, mode });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         await admin.from("listing_images").update({
@@ -178,10 +213,10 @@ Deno.serve(async (req) => {
       await admin.from("processing_logs").insert({
         user_id: userId,
         listing_id: listingId,
-        type: "enhance_images",
+        type: mode === "watermark_only" ? "remove_watermark" : "enhance_images",
         status: "done",
-        message: `enhance-listing-images (${MODEL}): ${results.filter(r => r.ok).length}/${results.length} sucesso`,
-        metadata_json: { model: MODEL, results },
+        message: `enhance-listing-images (${MODEL}, mode=${mode}): ${results.filter(r => r.ok).length}/${results.length} sucesso`,
+        metadata_json: { model: MODEL, mode, results },
       });
     } catch { /* noop */ }
 

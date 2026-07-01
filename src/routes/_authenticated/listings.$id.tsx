@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, ExternalLink, ImageOff, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Download, Eraser, ExternalLink, ImageOff, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -150,19 +150,19 @@ function ListingDetail() {
   const [enhanceProgress, setEnhanceProgress] = useState<{ done: number; total: number } | null>(null);
   const [enhancingIds, setEnhancingIds] = useState<Set<string>>(new Set());
 
-  const enhanceOne = useCallback(async (imageId: string) => {
+  const enhanceOne = useCallback(async (imageId: string, mode: "enhance" | "watermark_only" = "enhance") => {
     setEnhancingIds((prev) => { const n = new Set(prev); n.add(imageId); return n; });
     try {
       const { data, error } = await supabase.functions.invoke("enhance-listing-images", {
-        body: { listing_id: id, image_ids: [imageId] },
+        body: { listing_id: id, image_ids: [imageId], mode },
       });
       if (error) throw error;
       const r = (data as { results?: Array<{ ok: boolean; error?: string }> })?.results?.[0];
       if (r && !r.ok) throw new Error(r.error || "Falha ao tratar");
       await load();
-      toast.success("Foto tratada");
+      toast.success(mode === "watermark_only" ? "Marca d'água removida" : "Foto tratada");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Falha ao tratar foto");
+      toast.error(e instanceof Error ? e.message : "Falha ao processar foto");
     } finally {
       setEnhancingIds((prev) => { const n = new Set(prev); n.delete(imageId); return n; });
     }
@@ -183,7 +183,7 @@ function ListingDetail() {
     }
   }, [load]);
 
-  const enhance = useCallback(async () => {
+  const enhance = useCallback(async (mode: "enhance" | "watermark_only" = "enhance") => {
     setEnhancing(true);
     setEnhanceProgress(null);
     try {
@@ -197,7 +197,7 @@ function ListingDetail() {
         .filter((i: any) => i.original_external_url)
         .map((i: any) => i.id as string);
       if (queue.length === 0) {
-        toast.error("Nenhuma foto disponível para tratar");
+        toast.error("Nenhuma foto disponível para processar");
         return;
       }
       const total = queue.length;
@@ -208,7 +208,7 @@ function ListingDetail() {
       for (let i = 0; i < queue.length; i += BATCH) {
         const batch = queue.slice(i, i + BATCH);
         const { data, error } = await supabase.functions.invoke("enhance-listing-images", {
-          body: { listing_id: id, image_ids: batch },
+          body: { listing_id: id, image_ids: batch, mode },
         });
         if (error) throw error;
         const results = (data as { results?: Array<{ ok: boolean }> })?.results ?? [];
@@ -217,9 +217,13 @@ function ListingDetail() {
         setEnhanceProgress({ done, total });
         await load();
       }
-      toast.success(`Fotos tratadas: ${ok}/${total}`);
+      toast.success(
+        mode === "watermark_only"
+          ? `Marca d'água removida: ${ok}/${total}`
+          : `Fotos tratadas: ${ok}/${total}`,
+      );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Falha ao tratar fotos");
+      toast.error(e instanceof Error ? e.message : "Falha ao processar fotos");
     } finally {
       setEnhancing(false);
       setEnhanceProgress(null);
@@ -228,8 +232,9 @@ function ListingDetail() {
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [confirmMode, setConfirmMode] = useState<"enhance" | "watermark_only">("enhance");
 
-  const openEnhanceConfirm = useCallback(async () => {
+  const openEnhanceConfirm = useCallback(async (mode: "enhance" | "watermark_only" = "enhance") => {
     const { data: allImgs, error } = await supabase
       .from("listing_images")
       .select("id,original_external_url")
@@ -240,9 +245,10 @@ function ListingDetail() {
     }
     const count = (allImgs ?? []).filter((i: any) => i.original_external_url).length;
     if (count === 0) {
-      toast.error("Nenhuma foto disponível para tratar");
+      toast.error("Nenhuma foto disponível para processar");
       return;
     }
+    setConfirmMode(mode);
     setPendingCount(count);
     setConfirmOpen(true);
   }, [id]);
@@ -358,14 +364,17 @@ function ListingDetail() {
                   {showEnhanced ? "Ver originais" : "Ver tratadas"}
                 </Button>
               )}
-              <Button size="sm" onClick={openEnhanceConfirm} disabled={enhancing}>
+              <Button size="sm" variant="outline" onClick={() => openEnhanceConfirm("watermark_only")} disabled={enhancing}>
+                <Eraser className={`mr-2 h-4 w-4 ${enhancing ? "animate-pulse" : ""}`} />
+                Remover marca d'água
+              </Button>
+              <Button size="sm" onClick={() => openEnhanceConfirm("enhance")} disabled={enhancing}>
                 <Sparkles className={`mr-2 h-4 w-4 ${enhancing ? "animate-pulse" : ""}`} />
                 {enhancing
                   ? enhanceProgress
-                    ? `Tratando ${enhanceProgress.done}/${enhanceProgress.total}...`
-                    : "Tratando..."
+                    ? `Processando ${enhanceProgress.done}/${enhanceProgress.total}...`
+                    : "Processando..."
                   : hasAnyEnhanced ? "Retratar com IA" : "Tratar fotos com IA"}
-
               </Button>
               {hasAnyEnhanced && (
                 <Button size="sm" variant="secondary" onClick={downloadAll} disabled={downloadingZip}>
@@ -449,15 +458,26 @@ function ListingDetail() {
                           <div className="absolute left-1 top-1 rounded bg-primary px-1 text-[10px] text-primary-foreground">IA</div>
                         )}
                         {canEnhance && !isProcessing && (
-                          <button
-                            type="button"
-                            onClick={() => enhanceOne(im.id)}
-                            disabled={enhancing}
-                            title={isEnhanced ? "Retratar com IA" : "Tratar com IA"}
-                            className="absolute right-8 top-1 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            <Sparkles className="h-3 w-3" /> {isEnhanced ? "Retratar" : "Tratar"}
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => enhanceOne(im.id, "enhance")}
+                              disabled={enhancing}
+                              title={isEnhanced ? "Retratar com IA" : "Tratar com IA"}
+                              className="absolute right-8 top-1 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <Sparkles className="h-3 w-3" /> {isEnhanced ? "Retratar" : "Tratar"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => enhanceOne(im.id, "watermark_only")}
+                              disabled={enhancing}
+                              title="Remover apenas marca d'água"
+                              className="absolute left-1 bottom-1 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <Eraser className="h-3 w-3" /> Marca
+                            </button>
+                          </>
                         )}
                         <button
                           type="button"
@@ -578,7 +598,9 @@ function ListingDetail() {
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar tratamento com IA</AlertDialogTitle>
+            <AlertDialogTitle>
+              {confirmMode === "watermark_only" ? "Confirmar remoção de marca d'água" : "Confirmar tratamento com IA"}
+            </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-sm">
                 <div>
@@ -591,19 +613,27 @@ function ListingDetail() {
                     (~US$ {COST_PER_IMAGE_USD.toFixed(2)} por foto)
                   </span>
                 </div>
-                <div className="text-muted-foreground">
-                  Modo econômico ativo (qualidade baixa, ~US$ 0,02/foto). O resultado pode ter menos nitidez que no modo alto.
-                </div>
-                <div className="text-muted-foreground">
-                  Retratar sobrescreve as fotos já tratadas e gera novo custo.
-                </div>
+                {confirmMode === "watermark_only" ? (
+                  <div className="text-muted-foreground">
+                    Este modo apaga apenas logos/selos dos portais (OLX, ZAP, Viva Real) e mantém o resto da foto igual — mesma orientação, cores, enquadramento e nitidez.
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-muted-foreground">
+                      Modo econômico ativo (qualidade baixa, ~US$ 0,02/foto). O resultado pode ter menos nitidez que no modo alto.
+                    </div>
+                    <div className="text-muted-foreground">
+                      Retratar sobrescreve as fotos já tratadas e gera novo custo.
+                    </div>
+                  </>
+                )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setConfirmOpen(false); void enhance(); }}>
-              Confirmar e tratar
+            <AlertDialogAction onClick={() => { setConfirmOpen(false); void enhance(confirmMode); }}>
+              {confirmMode === "watermark_only" ? "Confirmar e remover" : "Confirmar e tratar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
