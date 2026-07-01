@@ -20,17 +20,46 @@ const TARGET_W = 1536;
 const TARGET_H = 864;
 const MODEL = "google/gemini-2.5-flash-image";
 
-async function fetchAsDataUrl(url: string): Promise<{ dataUrl: string; contentType: string } | null> {
+async function fetchBytes(url: string): Promise<Uint8Array | null> {
   try {
     const r = await fetch(url, { headers: { "Referer": "https://www.olx.com.br/" } });
     if (!r.ok) return null;
-    const ct = r.headers.get("content-type") || "image/jpeg";
-    const buf = new Uint8Array(await r.arrayBuffer());
-    let bin = "";
-    for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
-    const b64 = btoa(bin);
-    return { dataUrl: `data:${ct};base64,${b64}`, contentType: ct };
+    return new Uint8Array(await r.arrayBuffer());
   } catch { return null; }
+}
+
+function bytesToDataUrl(bytes: Uint8Array, contentType: string): string {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk) as unknown as number[]);
+  }
+  return `data:${contentType};base64,${btoa(bin)}`;
+}
+
+// Converte qualquer foto em um canvas horizontal 16:9 (TARGET_W x TARGET_H) com letterbox branco.
+// Isso força o Gemini a devolver saída horizontal (ele preserva o aspect ratio da entrada).
+async function toHorizontalCanvas(bytes: Uint8Array): Promise<Uint8Array> {
+  const decoded = await decodeImage(bytes);
+  const src = decoded as Image;
+  const srcW = src.width;
+  const srcH = src.height;
+  const targetRatio = TARGET_W / TARGET_H;
+  const srcRatio = srcW / srcH;
+  let drawW: number, drawH: number;
+  if (srcRatio > targetRatio) {
+    drawW = TARGET_W;
+    drawH = Math.round(TARGET_W / srcRatio);
+  } else {
+    drawH = TARGET_H;
+    drawW = Math.round(TARGET_H * srcRatio);
+  }
+  const resized = src.clone().resize(drawW, drawH);
+  const canvas = new Image(TARGET_W, TARGET_H).fill(0xffffffff);
+  const offX = Math.floor((TARGET_W - drawW) / 2);
+  const offY = Math.floor((TARGET_H - drawH) / 2);
+  canvas.composite(resized, offX, offY);
+  return await canvas.encode(); // PNG
 }
 
 function extractImageB64FromResponse(json: any): string | null {
