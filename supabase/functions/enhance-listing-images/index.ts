@@ -198,7 +198,7 @@ Deno.serve(async (req) => {
           enhanced_at: new Date().toISOString(),
           error_message: null,
         }).eq("id", img.id);
-        results.push({ id: img.id, ok: true, original_ratio: originalRatio, final_ratio: finalRatio, was_corrected: wasCorrected, white_bars_detected: whiteBars, retried });
+        results.push({ id: img.id, ok: true, original_ratio: originalRatio, final_ratio: finalRatio, was_corrected: wasCorrected, white_bars_detected: whiteBars, retried, mode });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         await admin.from("listing_images").update({
