@@ -3,6 +3,7 @@
 // Prompt fixo: "Melhore a imagem sem mudar o ambiente, deixe na horizontal."
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { decode as decodeImage, Image } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,7 +15,9 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 const BUCKET = "olx-images";
-const PROMPT = "Melhore a imagem sem mudar o ambiente, deixe na horizontal.";
+const PROMPT = "Melhore a foto do imóvel mantendo o ambiente real (paredes, piso, teto, móveis, iluminação). A imagem está em formato horizontal 16:9 com bordas brancas nas laterais — preencha essas bordas estendendo naturalmente o mesmo ambiente de forma coerente e realista, sem inventar móveis novos, sem mudar cores nem estilo. Resultado final deve ser sempre horizontal (paisagem).";
+const TARGET_W = 1536;
+const TARGET_H = 864;
 const MODEL = "google/gemini-2.5-flash-image";
 
 async function fetchAsDataUrl(url: string): Promise<{ dataUrl: string; contentType: string } | null> {
