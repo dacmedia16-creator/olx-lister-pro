@@ -69,7 +69,7 @@ function ListingsPage() {
     (async () => {
       let query = supabase
         .from("olx_listings")
-        .select("id,title,price,city,neighborhood,category,listed_at,created_at")
+        .select("id,title,price,city,neighborhood,category,listed_at,created_at,source_portal")
         .order("created_at", { ascending: false })
         .limit(200);
       if (city) query = query.ilike("city", `%${city}%`);
@@ -78,10 +78,11 @@ function ListingsPage() {
       if (q) query = query.ilike("title", `%${q}%`);
       if (min) query = query.gte("price", Number(min));
       if (max) query = query.lte("price", Number(max));
+      if (portal) query = query.eq("source_portal", portal);
       const { data } = await query;
       setRows((data as Row[]) ?? []);
     })();
-  }, [city, neighborhood, category, q, min, max]);
+  }, [city, neighborhood, category, q, min, max, portal]);
 
   const ids = useMemo(() => rows.map((r) => r.id), [rows]);
   useEffect(() => {
