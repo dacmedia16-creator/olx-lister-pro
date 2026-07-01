@@ -394,7 +394,7 @@ Deno.serve(async (req) => {
         }
 
         if (imageUrls.length === 0) {
-          plpFallback = await fetchPlpFallbackImages(url, mapped.listing_id, GECKO_API_KEY, getListingRoot(gecko));
+          plpFallback = await fetchPlpFallbackImages(url, GECKO_API_KEY, getListingRoot(gecko), mapped.title);
           if (plpFallback.urls.length > 0) {
             imageUrls = plpFallback.urls;
             imageSource = "plp_fallback";
@@ -422,6 +422,7 @@ Deno.serve(async (req) => {
               item_count: plpFallback.itemCount,
               matched_listing: plpFallback.matched,
               request_id: plpFallback.requestId,
+              attempts: plpFallback.attempts,
             } : null,
             image_fields: {
               images: Array.isArray(listingRoot?.images) ? listingRoot.images.slice(0, 3) : listingRoot?.images ?? null,
