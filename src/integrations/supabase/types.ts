@@ -128,6 +128,7 @@ export type Database = {
           execution_id: string | null
           extracted_at: string | null
           id: string
+          images_source: string | null
           listed_at: string | null
           listing_id: string | null
           main_category: string | null
@@ -162,6 +163,7 @@ export type Database = {
           execution_id?: string | null
           extracted_at?: string | null
           id?: string
+          images_source?: string | null
           listed_at?: string | null
           listing_id?: string | null
           main_category?: string | null
@@ -196,6 +198,7 @@ export type Database = {
           execution_id?: string | null
           extracted_at?: string | null
           id?: string
+          images_source?: string | null
           listed_at?: string | null
           listing_id?: string | null
           main_category?: string | null
