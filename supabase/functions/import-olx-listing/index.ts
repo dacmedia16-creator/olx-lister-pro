@@ -2,7 +2,7 @@
 // Chama a GeckoAPI PDP para uma URL da OLX e persiste anúncio + URLs de fotos (sem baixar pro storage).
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { callGecko, extractPdpImageDiagnostics, extractPlpImages, mapGeckoStatusMessage } from "../_shared/gecko.ts";
+import { callGecko, extractPdpImageDiagnostics, extractPlpImages, isLikelyImageUrl, mapGeckoStatusMessage } from "../_shared/gecko.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -319,6 +319,7 @@ Deno.serve(async (req) => {
             metadata_json: { url, image_source: imageSource, plp_fallback: plpFallback },
           });
         } else {
+          imageUrls = imageUrls.filter(isLikelyImageUrl);
           await userClient.from("listing_images").delete().eq("listing_id", listingRow.id);
           const rows = imageUrls.map((u, i) => ({
             user_id, listing_id: listingRow.id,
