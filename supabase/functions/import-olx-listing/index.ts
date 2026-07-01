@@ -257,6 +257,8 @@ Deno.serve(async (req) => {
             imageSource = "plp_fallback";
           }
         }
+        imageUrls = imageUrls.filter(isLikelyImageUrl);
+        if (imageUrls.length === 0) imageSource = "none";
 
         // Diagnóstico da resposta PDP (primeira execução por URL)
         const listingRoot = getListingRoot(gecko);
@@ -319,7 +321,6 @@ Deno.serve(async (req) => {
             metadata_json: { url, image_source: imageSource, plp_fallback: plpFallback },
           });
         } else {
-          imageUrls = imageUrls.filter(isLikelyImageUrl);
           await userClient.from("listing_images").delete().eq("listing_id", listingRow.id);
           const rows = imageUrls.map((u, i) => ({
             user_id, listing_id: listingRow.id,
