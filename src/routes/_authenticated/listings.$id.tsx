@@ -226,6 +226,29 @@ function ListingDetail() {
     }
   }, [id, load]);
 
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+
+  const openEnhanceConfirm = useCallback(async () => {
+    const { data: allImgs, error } = await supabase
+      .from("listing_images")
+      .select("id,original_external_url")
+      .eq("listing_id", id);
+    if (error) {
+      toast.error("Falha ao contar fotos");
+      return;
+    }
+    const count = (allImgs ?? []).filter((i: any) => i.original_external_url).length;
+    if (count === 0) {
+      toast.error("Nenhuma foto disponível para tratar");
+      return;
+    }
+    setPendingCount(count);
+    setConfirmOpen(true);
+  }, [id]);
+
+
+
 
   const enhancedList = useMemo(
     () => images.filter((i) => i.enhanced_storage_path && i.enhancement_status === "done"),
