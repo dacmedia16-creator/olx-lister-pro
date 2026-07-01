@@ -61,10 +61,20 @@ function collect(fields: any[]): string[] {
 }
 
 const IMAGE_EXT_RE = /https?:\/\/[^\s"'<>\\]+?\.(?:jpe?g|png|webp)(?:\?[^\s"'<>\\]*)?/gi;
-const IMAGE_HOST_HINT_RE = /(img|image|photo|media|cdn|olx|cloudfront|akamai|static)/i;
+const IMAGE_HOST_HINT_RE = /(img|image|photo|media|cdn|cloudfront|akamai|static)/i;
 
 function looksLikeImageUrl(raw: string): boolean {
-  return /\.(?:jpe?g|png|webp)(?:\?|$)/i.test(raw) || IMAGE_HOST_HINT_RE.test(raw);
+  if (/\.(?:jpe?g|png|webp)(?:\?|$)/i.test(raw)) return true;
+  try {
+    const u = new URL(raw);
+    const hostAndPath = `${u.hostname}${u.pathname}`;
+    if (!IMAGE_HOST_HINT_RE.test(hostAndPath)) return false;
+    // Avoid OLX page/category/listing URLs that appear in attribute links.
+    if (/olx\.com\.br$/i.test(u.hostname) && !/thumb|image|img|photo|media|picture/i.test(u.pathname)) return false;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function collectDeepImageUrls(root: any, maxDepth = 7): string[] {
