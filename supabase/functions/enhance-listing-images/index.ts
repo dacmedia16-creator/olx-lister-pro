@@ -137,6 +137,8 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const listingId = body?.listing_id as string | undefined;
     const imageIds = Array.isArray(body?.image_ids) ? (body.image_ids as string[]) : null;
+    const mode = (body?.mode === "watermark_only" ? "watermark_only" : "enhance") as "enhance" | "watermark_only";
+    const activePrompt = mode === "watermark_only" ? WATERMARK_ONLY_PROMPT : PROMPT;
     if (!listingId) return new Response(JSON.stringify({ error: "listing_id required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     const { data: listing, error: lerr } = await admin.from("olx_listings").select("id,user_id").eq("id", listingId).maybeSingle();
