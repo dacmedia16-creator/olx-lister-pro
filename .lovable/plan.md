@@ -1,38 +1,50 @@
-## Diagnóstico
+# Tratamento de fotos com IA + downloads
 
-O anúncio importado mais recente está sem fotos porque:
+## Objetivo
+Na tela de detalhes do anúncio, permitir tratar as fotos com IA (Lovable AI Gateway, modelo de edição de imagem) e depois baixá-las individualmente ou em ZIP.
 
-- A resposta PDP da GeckoAPI veio com `images: []`.
-- O fallback PLP encontrou 50 itens, mas não encontrou correspondência exata com o anúncio importado.
-- Como corrigimos antes para não pegar fotos do primeiro anúncio aleatório, o sistema preferiu salvar 0 fotos em vez de trazer fotos erradas.
+Prompt fixo aplicado a cada foto:
+> "Melhore a imagem sem mudar o ambiente, deixe na horizontal."
 
-Isso evita contaminação, mas ainda deixa o anúncio sem imagem quando a GeckoAPI PDP não entrega fotos.
+## Backend
 
-## Plano de correção
+### 1. Storage
+- Usar bucket privado existente `olx-images` para salvar as versões tratadas em `enhanced/{listing_id}/{image_id}.png`.
 
-1. **Melhorar a correspondência PDP ↔ PLP**
-   - Normalizar melhor os IDs e URLs da OLX.
-   - Comparar `listingId`, `adId`, slug da URL e ID numérico final do anúncio.
-   - Remover parâmetros como `?lis=...` antes da comparação.
+### 2. Coluna já existente
+`listing_images` já tem `enhanced_storage_path`, `enhancement_status`, `enhancement_error`. Vamos usá-las (status: `pending` / `processing` / `done` / `failed`).
 
-2. **Fazer fallback PLP seguro por busca direcionada**
-   - Em vez de usar apenas a URL de categoria ampla, tentar uma busca mais específica com o título do anúncio.
-   - Usar fotos somente se o item encontrado bater com ID/URL/slug do anúncio.
-   - Continuar proibindo fallback cego para o primeiro item.
+### 3. Nova Edge Function `enhance-listing-images`
+- Input: `{ listing_id, image_ids?: string[] }` (se omitido, processa todas).
+- Para cada imagem:
+  1. Marca `enhancement_status = 'processing'`.
+  2. Baixa a URL original (`original_external_url`) com `referrerPolicy=no-referrer`.
+  3. Chama `https://ai.gateway.lovable.dev/v1/chat/completions` com `google/gemini-2.5-flash-image` (Nano Banana — edição de imagem), enviando a imagem como `image_url` (data URL base64) + o prompt fixo. Modalidade `image`.
+  4. Recebe base64 da imagem editada, faz upload no bucket `olx-images` em `enhanced/{listing_id}/{image_id}.png`.
+  5. Atualiza `enhanced_storage_path`, `enhancement_status='done'`, `enhanced_at=now()`.
+  6. Em erro: `enhancement_status='failed'` + `enhancement_error`.
+- Trata 429/402 do Gateway com mensagem clara.
+- Loga em `processing_logs`.
 
-3. **Preservar fotos boas já existentes**
-   - Se uma reimportação vier com 0 fotos, não apagar fotos anteriores.
-   - Atualizar `images_source` para indicar claramente quando não houve novas imagens.
+## Frontend (`src/routes/_authenticated/listings.$id.tsx`)
 
-4. **Adicionar logs de diagnóstico úteis**
-   - Registrar IDs comparados, URLs normalizadas, quantidade de candidatos PLP e motivo de não-match.
-   - Assim fica claro se o problema é falta de imagem na GeckoAPI ou falha de matching.
+### Botão "Tratar fotos com IA"
+- Aparece no header do anúncio.
+- Ao clicar: chama a Edge Function e faz polling nas imagens (`enhancement_status`) até todas ficarem `done`/`failed`.
+- Mostra progresso: "Tratando X de N…".
 
-5. **Reimplantar e testar**
-   - Reimplantar `import-olx-listing`.
-   - Reimportar o anúncio atual.
-   - Confirmar no banco se `listing_images` recebeu URLs corretas ou se o log mostra que a GeckoAPI não retornou fotos correspondentes.
+### Exibição
+- Cada foto no carousel/lista ganha um toggle "Original / Tratada" (só habilitado se `enhancement_status='done'`).
+- Badge visual quando a foto tem versão tratada.
+- Foto tratada é servida via signed URL do bucket privado (`createSignedUrl`, 1h).
 
-## Resultado esperado
+### Downloads
+- **Individual**: botão de download em cada foto tratada (usa signed URL, força `download` attribute).
+- **ZIP com todas tratadas**: botão "Baixar todas (ZIP)" no header. Usa `jszip` no cliente: baixa cada signed URL, empacota como `anuncio-{id}.zip` e dispara download via `file-saver` (ou blob URL nativo).
 
-O sistema só vai exibir fotos quando forem do anúncio correto. Se a GeckoAPI não fornecer fotos do anúncio no PDP nem permitir match seguro no PLP, a tela continuará sem foto, mas com log explicando exatamente o motivo — sem risco de mostrar fotos de outro imóvel.
+### Dependência nova
+- `bun add jszip`
+
+## Fora do escopo
+- Reprocessar automaticamente ao importar (mantém manual).
+- Tratamento de foto por foto individual (só "tratar todas" — pode ser adicionado depois se quiser).
