@@ -244,17 +244,35 @@ Deno.serve(async (req) => {
       return { width: dv.getUint32(16), height: dv.getUint32(20) };
     }
 
-    const results: Array<{ id: string; ok: boolean; error?: string; original_ratio?: number; final_ratio?: number; was_corrected?: boolean }> = [];
+    const results: Array<{ id: string; ok: boolean; error?: string; original_ratio?: number; final_ratio?: number; was_corrected?: boolean; white_bars_detected?: boolean; retried?: boolean }> = [];
     for (const img of targets) {
       try {
         const srcBytes = await fetchBytes(img.original_external_url!);
         if (!srcBytes) throw new Error("Falha ao baixar imagem original");
         const horizontalPng = await toHorizontalCanvas(srcBytes);
         const dataUrl = bytesToDataUrl(horizontalPng, "image/png");
-        const b64 = await callGeminiEdit(dataUrl);
+        let b64 = await callGeminiEdit(dataUrl, PROMPT);
         let bytes = b64ToBytes(b64);
 
-        // Validação leve: lê apenas header PNG para pegar dimensões
+        // Detecta faixas brancas nas laterais — se sim, refaz uma vez com prompt reforçado
+        let whiteBars = await hasWhiteSideBars(bytes);
+        let retried = false;
+        if (whiteBars) {
+          try {
+            b64 = await callGeminiEdit(dataUrl, RETRY_PROMPT);
+            const retryBytes = b64ToBytes(b64);
+            retried = true;
+            const stillWhite = await hasWhiteSideBars(retryBytes);
+            if (!stillWhite) {
+              bytes = retryBytes;
+              whiteBars = false;
+            } else {
+              bytes = retryBytes; // aceita mesmo assim, mas registra
+            }
+          } catch { /* mantém primeira tentativa */ }
+        }
+
+        // Validação de aspect ratio via header PNG
         let originalRatio: number | undefined;
         let finalRatio: number | undefined;
         let wasCorrected = false;
@@ -284,7 +302,7 @@ Deno.serve(async (req) => {
           enhanced_at: new Date().toISOString(),
           error_message: null,
         }).eq("id", img.id);
-        results.push({ id: img.id, ok: true, original_ratio: originalRatio, final_ratio: finalRatio, was_corrected: wasCorrected });
+        results.push({ id: img.id, ok: true, original_ratio: originalRatio, final_ratio: finalRatio, was_corrected: wasCorrected, white_bars_detected: whiteBars, retried });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         await admin.from("listing_images").update({
