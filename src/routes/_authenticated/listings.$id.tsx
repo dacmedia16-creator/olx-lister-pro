@@ -249,7 +249,32 @@ function ListingDetail() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Fotos</CardTitle></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+          <CardTitle>Fotos</CardTitle>
+          {hasImages && (
+            <div className="flex flex-wrap items-center gap-2">
+              {hasAnyEnhanced && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowEnhanced((v) => !v)}
+                >
+                  {showEnhanced ? "Ver originais" : "Ver tratadas"}
+                </Button>
+              )}
+              <Button size="sm" onClick={enhance} disabled={enhancing}>
+                <Sparkles className={`mr-2 h-4 w-4 ${enhancing ? "animate-pulse" : ""}`} />
+                {enhancing ? "Tratando..." : hasAnyEnhanced ? "Retratar com IA" : "Tratar fotos com IA"}
+              </Button>
+              {hasAnyEnhanced && (
+                <Button size="sm" variant="secondary" onClick={downloadAll} disabled={downloadingZip}>
+                  <Download className="mr-2 h-4 w-4" />
+                  {downloadingZip ? "Gerando ZIP..." : `Baixar ZIP (${enhancedList.length})`}
+                </Button>
+              )}
+            </div>
+          )}
+        </CardHeader>
         <CardContent>
           {!hasImages ? (
             <div className="flex flex-col items-start gap-3 rounded-md border border-dashed p-6">
@@ -281,36 +306,64 @@ function ListingDetail() {
                 </div>
               )}
               <OlxImageCarousel
-                urls={images.map((i) => i.original_external_url).filter((u): u is string => !!u)}
+                urls={images
+                  .map((i) => (showEnhanced && enhancedUrls[i.id]) || i.original_external_url)
+                  .filter((u): u is string => !!u)}
                 alt={listing.title ?? ""}
                 className="rounded-md"
               />
-              {images.length > 1 && (
+              {images.length > 0 && (
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
-                  {images.map((im) => (
-                    <div key={im.id} className="aspect-square overflow-hidden rounded bg-muted">
-                      {im.original_external_url ? (
-                        <img
-                          src={im.original_external_url}
-                          alt=""
-                          referrerPolicy="no-referrer"
-                          loading="lazy"
-                          className="h-full w-full object-cover"
-                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">
-                          {im.status === "failed" ? "falhou" : "—"}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                  {images.map((im, idx) => {
+                    const enhUrl = enhancedUrls[im.id];
+                    const displaySrc = (showEnhanced && enhUrl) || im.original_external_url;
+                    const isEnhanced = !!enhUrl && showEnhanced;
+                    return (
+                      <div key={im.id} className="group relative aspect-square overflow-hidden rounded bg-muted">
+                        {displaySrc ? (
+                          <img
+                            src={displaySrc}
+                            alt=""
+                            referrerPolicy="no-referrer"
+                            loading="lazy"
+                            className="h-full w-full object-cover"
+                            onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">
+                            {im.status === "failed" ? "falhou" : "—"}
+                          </div>
+                        )}
+                        {im.enhancement_status === "processing" && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-[10px] text-white">
+                            tratando…
+                          </div>
+                        )}
+                        {im.enhancement_status === "failed" && (
+                          <div className="absolute left-1 top-1 rounded bg-destructive px-1 text-[10px] text-destructive-foreground">falhou</div>
+                        )}
+                        {isEnhanced && (
+                          <>
+                            <div className="absolute left-1 top-1 rounded bg-primary px-1 text-[10px] text-primary-foreground">IA</div>
+                            <button
+                              type="button"
+                              onClick={() => downloadEnhanced(im.enhanced_storage_path!, `foto-${String(idx + 1).padStart(2, "0")}.png`)}
+                              className="absolute inset-x-1 bottom-1 flex items-center justify-center gap-1 rounded bg-black/70 px-1 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100"
+                            >
+                              <Download className="h-3 w-3" /> Baixar
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
           )}
         </CardContent>
       </Card>
+
 
       <Card>
         <CardHeader><CardTitle>Descrição</CardTitle></CardHeader>
