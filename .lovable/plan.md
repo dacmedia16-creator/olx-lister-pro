@@ -1,35 +1,31 @@
-## Plano para corrigir fotos do ZAP
+## Objetivo
+Adicionar um botão separado "Remover marca d'água" que trata as fotos apenas para apagar logos/selos dos portais (OLX, ZAP, Viva Real), sem aplicar o tratamento completo de melhoria (nitidez, exposição, outpainting horizontal etc.). Assim o usuário pode escolher entre:
+- **Tratar foto** (atual): melhoria completa + remoção de marca d'água + horizontal 3:2.
+- **Remover marca d'água** (novo): apenas remove a logo, preservando 100% do resto da foto e do formato original.
 
-Vou ajustar o pipeline do ZAP para seguir o mesmo padrão que já funciona na OLX: PDP primeiro, retry, diagnóstico detalhado e fallback PLP quando o PDP não trouxer fotos.
+## Mudanças
 
-### 1. Corrigir extração de imagens do ZAP PDP
-- Atualizar `supabase/functions/_shared/gecko.ts` para entender melhor os formatos reais do ZAP/Viva Real.
-- Além de `url`, procurar campos comuns em objetos de imagem como `imageUrl`, `imageURL`, `uri`, `path`, `href`, `src`, `contentUrl` e variações aninhadas.
-- Quando `images` vier como array de objetos sem URL direta, fazer varredura dentro de cada objeto em vez de retornar vazio.
-- Manter o resolvedor de template `{action}/{width}x{height}` para virar URL carregável (`fit-in/1200x900`).
+### 1. Edge Function `enhance-listing-images`
+- Aceitar novo parâmetro opcional no body: `mode: "enhance" | "watermark_only"` (default `"enhance"` para não quebrar o fluxo atual).
+- Quando `mode === "watermark_only"`:
+  - Usar um prompt enxuto focado só em apagar logo/selo/marca d'água/texto sobreposto de OLX, OLX Brasil, ZAP, ZAP Imóveis, Viva Real, reconstruindo fotorrealisticamente a área coberta, sem alterar nada mais na cena (sem mexer em exposição, cor, nitidez, enquadramento).
+  - Manter `quality: "low"` e `model: gpt-image-1` (mesmo custo de ~US$ 0,02/foto, respeitando o limite atual).
+  - **Não** forçar `size=1536x1024`: detectar o aspect ratio da imagem original via header (PNG/JPEG) e escolher o `size` suportado mais próximo (`1024x1024`, `1536x1024` ou `1024x1536`) para preservar a orientação original.
+  - Registrar em `processing_logs` com `type: "remove_watermark"` para separar do enhance normal.
+- Salvar o resultado no mesmo caminho `enhanced/{listingId}/{imageId}.png` e marcar `enhancement_status = 'done'` (reaproveita a UI de "foto tratada", download e ZIP existentes).
 
-### 2. Copiar o fallback PLP da OLX para ZAP
-- Generalizar o fallback atual `fetchPlpFallbackImages`, que hoje chama somente `target: "olx.com.br"`.
-- Para ZAP, chamar `target: "zapimoveis.com.br"`, `type: "plp"` usando URLs derivadas do link do anúncio.
-- Usar o mesmo tipo de match seguro da OLX: ID do anúncio, URL exata/contida e slug, para evitar puxar fotos de anúncio relacionado.
+### 2. Frontend — tela de detalhes `src/routes/_authenticated/listings.$id.tsx`
+- Adicionar um segundo botão em lote no topo da galeria: **"Remover marca d'água"** ao lado do atual "Tratar fotos".
+  - Diálogo de confirmação separado com estimativa (qtd fotos × US$ 0,02) e texto deixando claro que só remove logo.
+  - Chama `enhance-listing-images` passando `mode: "watermark_only"` e mesmo mecanismo de lote (`remaining_ids`).
+- Em cada miniatura, adicionar um botão/ícone extra **"Só marca d'água"** ao lado do "Tratar/Retratar" individual, chamando a função com `mode: "watermark_only"` e o `image_ids` correspondente.
+- Não alterar layout geral, cores ou tokens — só acrescentar os botões usando os componentes shadcn existentes (`Button`, `AlertDialog`, ícone Lucide `Eraser` ou `Sparkles`).
 
-### 3. Melhorar derivação da PLP do ZAP
-- A partir de uma URL como `/imovel/...-id-2885261779/`, montar URLs candidatas de listagem sem depender só do caminho da OLX.
-- Usar dados do PDP (`address.city`, `address.stateAcronym`, `businessType`, `listingType`, título) para criar tentativas de PLP mais prováveis.
+### 3. Sem mudanças
+- Banco de dados: nenhuma migração (reutiliza colunas atuais de `listing_images`).
+- Bucket, custo máximo (US$ 0,02), limite de 40 fotos, fluxo de OLX/ZAP, download individual e ZIP: tudo inalterado.
 
-### 4. Melhorar logs de diagnóstico
-- Registrar no `processing_logs` para ZAP:
-  - campos encontrados em `images`, mesmo quando vierem aninhados;
-  - URLs finais já resolvidas;
-  - tentativa PDP, retry e PLP fallback;
-  - motivo do match do item PLP.
-
-### 5. Deploy e validação
-- Fazer deploy da função `import-olx-listing`.
-- Reimportar o mesmo anúncio ZAP para atualizar o registro existente.
-- Validar no banco que `listing_images` recebeu linhas e que `images_source` ficou `pdp`, `pdp_retry` ou `plp_fallback`, não `none`.
-
-### Fora de escopo
-- Não vou mexer em OpenAI/tratamento de fotos.
-- Não vou alterar custo/qualidade da IA.
-- Não vou mudar layout da tela, exceto se for necessário para exibir as fotos que já existem no banco.
+## Fora de escopo
+- Não vou trocar de modelo de IA nem mudar qualidade.
+- Não vou alterar o prompt do enhance completo já existente.
+- Não vou mexer em importação, listagem, dashboard ou detecção de portal.
