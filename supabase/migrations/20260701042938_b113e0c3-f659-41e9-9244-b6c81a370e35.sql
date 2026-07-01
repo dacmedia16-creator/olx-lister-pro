@@ -1,0 +1,1 @@
+ALTER TABLE public.olx_search_results ADD COLUMN IF NOT EXISTS image_urls text[] NOT NULL DEFAULT '{}'::text[];

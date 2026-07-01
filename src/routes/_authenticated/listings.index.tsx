@@ -23,7 +23,7 @@ type Row = {
   created_at: string;
 };
 
-type Img = { listing_id: string; original_storage_path: string | null; position: number | null };
+type Img = { listing_id: string; original_external_url: string | null; position: number | null };
 
 function ListingsPage() {
   const [rows, setRows] = useState<Row[]>([]);
@@ -59,24 +59,14 @@ function ListingsPage() {
     (async () => {
       const { data } = await supabase
         .from("listing_images")
-        .select("listing_id,original_storage_path,position")
+        .select("listing_id,original_external_url,position")
         .in("listing_id", ids)
-        .eq("status", "downloaded")
         .order("position", { ascending: true });
-      const first: Record<string, Img> = {};
+      const first: Record<string, string> = {};
       for (const im of (data as Img[]) ?? []) {
-        if (!first[im.listing_id] && im.original_storage_path) first[im.listing_id] = im;
+        if (!first[im.listing_id] && im.original_external_url) first[im.listing_id] = im.original_external_url;
       }
-      const paths = Object.values(first).map((i) => i.original_storage_path!).filter(Boolean);
-      if (paths.length === 0) { setThumbs({}); return; }
-      const { data: signed } = await supabase.storage.from("olx-images").createSignedUrls(paths, 3600);
-      const map: Record<string, string> = {};
-      signed?.forEach((s, idx) => {
-        const path = paths[idx];
-        const listingId = Object.entries(first).find(([, v]) => v.original_storage_path === path)?.[0];
-        if (listingId && s.signedUrl) map[listingId] = s.signedUrl;
-      });
-      setThumbs(map);
+      setThumbs(first);
     })();
   }, [ids]);
 
@@ -107,7 +97,7 @@ function ListingsPage() {
               <Card className="h-full overflow-hidden transition-shadow hover:shadow-md">
                 <div className="relative aspect-video w-full overflow-hidden bg-muted">
                   {thumbs[l.id] ? (
-                    <img src={thumbs[l.id]} alt={l.title ?? ""} className="h-full w-full object-cover" loading="lazy" />
+                    <img src={thumbs[l.id]} alt={l.title ?? ""} referrerPolicy="no-referrer" className="h-full w-full object-cover" loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
                   ) : (
                     <>
                       <div className="flex h-full items-center justify-center text-xs text-muted-foreground">sem imagem</div>

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { formatBRL, formatDate } from "@/lib/olx";
 import { HashBadge } from "@/components/HashBadge";
+import { OlxImageCarousel } from "@/components/OlxImageCarousel";
 
 export const Route = createFileRoute("/_authenticated/listings/$id")({
   head: () => ({ meta: [{ title: "Detalhes do anúncio" }] }),
@@ -42,12 +43,12 @@ type Listing = {
   olx_delivery_enabled: boolean | null;
 };
 
-type Image = { id: string; original_storage_path: string | null; status: string; position: number | null };
+type Image = { id: string; original_external_url: string | null; original_storage_path: string | null; status: string; position: number | null };
 
 function ListingDetail() {
   const { id } = Route.useParams();
   const [listing, setListing] = useState<Listing | null>(null);
-  const [images, setImages] = useState<Array<Image & { url?: string }>>([]);
+  const [images, setImages] = useState<Image[]>([]);
   const [reimporting, setReimporting] = useState(false);
 
   const load = useCallback(async () => {
@@ -55,18 +56,10 @@ function ListingDetail() {
     setListing(data as Listing | null);
     const { data: imgs } = await supabase
       .from("listing_images")
-      .select("id,original_storage_path,status,position")
+      .select("id,original_external_url,original_storage_path,status,position")
       .eq("listing_id", id)
       .order("position", { ascending: true });
-    const list = (imgs as Image[]) ?? [];
-    const paths = list.map((i) => i.original_storage_path).filter((p): p is string => !!p);
-    let signed: Array<{ signedUrl: string | null }> = [];
-    if (paths.length > 0) {
-      const { data: s } = await supabase.storage.from("olx-images").createSignedUrls(paths, 3600);
-      signed = s ?? [];
-    }
-    const map = new Map(paths.map((p, i) => [p, signed[i]?.signedUrl]));
-    setImages(list.map((im) => ({ ...im, url: im.original_storage_path ? (map.get(im.original_storage_path) ?? undefined) : undefined })));
+    setImages((imgs as Image[]) ?? []);
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
@@ -163,18 +156,34 @@ function ListingDetail() {
               </div>
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-              {images.map((im) => (
-                <div key={im.id} className="aspect-video overflow-hidden rounded-md bg-muted">
-                  {im.url ? (
-                    <img src={im.url} alt="" className="h-full w-full object-cover" loading="lazy" />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                      {im.status === "failed" ? "falhou" : "processando"}
+            <div className="space-y-3">
+              <OlxImageCarousel
+                urls={images.map((i) => i.original_external_url).filter((u): u is string => !!u)}
+                alt={listing.title ?? ""}
+                className="rounded-md"
+              />
+              {images.length > 1 && (
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+                  {images.map((im) => (
+                    <div key={im.id} className="aspect-square overflow-hidden rounded bg-muted">
+                      {im.original_external_url ? (
+                        <img
+                          src={im.original_external_url}
+                          alt=""
+                          referrerPolicy="no-referrer"
+                          loading="lazy"
+                          className="h-full w-full object-cover"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">
+                          {im.status === "failed" ? "falhou" : "—"}
+                        </div>
+                      )}
                     </div>
-                  )}
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           )}
         </CardContent>
