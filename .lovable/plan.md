@@ -1,26 +1,16 @@
-## Objetivo
-Adicionar um botão de "tratar com IA" em cada foto individualmente na tela de detalhes do anúncio, além do botão em lote já existente.
+Adicionar botão de excluir foto individual na tela de detalhes do anúncio.
 
-## Mudanças
+## O que muda
 
-**Arquivo:** `src/routes/_authenticated/listings.$id.tsx`
+- Em cada miniatura de foto (em `src/routes/_authenticated/listings.$id.tsx`), adicionar um botão "Excluir" ao lado do botão "Tratar / Retratar" (canto superior direito, visível no hover).
+- Ao clicar: pedir confirmação e chamar um novo server function `deleteListingImage({ imageId })` que:
+  1. Verifica se o anúncio pertence ao usuário (RLS via `requireSupabaseAuth`).
+  2. Remove os arquivos do Storage (`storage_path` e `enhanced_storage_path` no bucket `olx-images`, se existirem).
+  3. Deleta a linha em `listing_images`.
+- Refetch da query de imagens após sucesso e feedback via toast.
 
-1. Criar novo estado `enhancingIds: Set<string>` para rastrear quais imagens estão sendo tratadas individualmente.
-2. Criar função `enhanceOne(imageId)` que:
-   - Adiciona o ID ao set `enhancingIds`.
-   - Chama `enhance-listing-images` com `{ listing_id: id, image_ids: [imageId] }`.
-   - Recarrega dados via `load()`.
-   - Mostra toast de sucesso/erro.
-   - Remove o ID do set no `finally`.
-3. No grid de miniaturas (linhas 348-394), adicionar em cada card:
-   - Botão sobre a imagem (canto superior direito) com ícone `Sparkles`:
-     - Texto/tooltip: "Tratar" (ou "Retratar" se `isEnhanced`).
-     - Desabilitado se `enhancingIds.has(im.id)`, `enhancing` (batch), ou sem `original_external_url`.
-     - Mostra spinner quando processando.
-   - Aparece no hover (`opacity-0 group-hover:opacity-100`), similar ao botão de download.
-4. Se `im.enhancement_status === "processing"`, manter o overlay atual "tratando…".
+## Detalhes técnicos
 
-## Comportamento
-- Batch (botão do topo) continua funcionando igual.
-- Individual permite retratar apenas 1 foto específica sem re-processar todas — útil para corrigir uma foto que ficou ruim.
-- Nada muda na Edge Function `enhance-listing-images` (ela já aceita `image_ids`).
+- Novo arquivo: `src/lib/delete-listing-image.functions.ts` (segue o padrão de `delete-listing.ts` já existente).
+- UI: ícone `Trash2` do lucide-react, botão vermelho pequeno com `AlertDialog` de confirmação.
+- Sem mudanças de schema, sem mudanças em Edge Functions, sem mudanças em outras telas.
