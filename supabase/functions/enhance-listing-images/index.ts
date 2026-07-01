@@ -156,18 +156,19 @@ Deno.serve(async (req) => {
     const remaining_ids = allTargets.slice(MAX_PER_CALL).map((t: any) => t.id);
 
     await admin.from("listing_images")
-      .update({ enhancement_status: "processing", enhancement_prompt: PROMPT })
+      .update({ enhancement_status: "processing", enhancement_prompt: activePrompt })
       .in("id", targets.map((t: any) => t.id));
 
     // (TARGET_RATIO/TOLERANCE removidos — fallback de canvas foi eliminado.)
 
-    const results: Array<{ id: string; ok: boolean; error?: string; original_ratio?: number; final_ratio?: number; was_corrected?: boolean; white_bars_detected?: boolean; retried?: boolean }> = [];
+    const results: Array<{ id: string; ok: boolean; error?: string; original_ratio?: number; final_ratio?: number; was_corrected?: boolean; white_bars_detected?: boolean; retried?: boolean; mode?: string }> = [];
     for (const img of targets) {
       try {
         const srcBytes = await fetchBytes(img.original_external_url!);
         if (!srcBytes) throw new Error("Falha ao baixar imagem original");
 
-        let bytes = await callOpenAiImageEdit(srcBytes, PROMPT);
+        const sizeArg = mode === "watermark_only" ? pickSizeForOriginal(srcBytes) : IMAGE_SIZE;
+        let bytes = await callOpenAiImageEdit(srcBytes, activePrompt, sizeArg);
 
         // Sem detecção de faixas brancas nem fallback de canvas (removidos junto com imagescript).
         // A OpenAI já devolve em 1536x1024 conforme size solicitado.
