@@ -574,6 +574,37 @@ function ListingDetail() {
           <Info label="extractedAt" value={formatDate(listing.extracted_at)} />
         </CardContent>
       </Card>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar tratamento com IA</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <div>
+                  <strong>{pendingCount}</strong> foto(s) serão processadas pela OpenAI.
+                </div>
+                <div>
+                  Custo estimado:{" "}
+                  <strong>US$ {(pendingCount * COST_PER_IMAGE_USD).toFixed(2)}</strong>{" "}
+                  <span className="text-muted-foreground">
+                    (~US$ {COST_PER_IMAGE_USD.toFixed(2)} por foto)
+                  </span>
+                </div>
+                <div className="text-muted-foreground">
+                  Retratar sobrescreve as fotos já tratadas e gera novo custo.
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setConfirmOpen(false); void enhance(); }}>
+              Confirmar e tratar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
