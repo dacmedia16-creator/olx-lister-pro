@@ -136,36 +136,21 @@ Deno.serve(async (req) => {
 
         let bytes = await callOpenAiImageEdit(srcBytes, PROMPT);
 
-        // Retry se faixas brancas
-        let whiteBars = await hasWhiteSideBars(bytes);
-        let retried = false;
-        if (whiteBars) {
-          try {
-            const retryBytes = await callOpenAiImageEdit(srcBytes, RETRY_PROMPT);
-            retried = true;
-            const stillWhite = await hasWhiteSideBars(retryBytes);
-            bytes = retryBytes;
-            if (!stillWhite) whiteBars = false;
-          } catch { /* mantém primeira tentativa */ }
-        }
+        // Sem detecção de faixas brancas nem fallback de canvas (removidos junto com imagescript).
+        // A OpenAI já devolve em 1536x1024 conforme size solicitado.
+        const whiteBars = false;
+        const retried = false;
 
-        // Valida aspect ratio; se torto, encaixa em canvas horizontal
+        // Valida aspect ratio via header PNG (sem decodificar pixels).
         let originalRatio: number | undefined;
         let finalRatio: number | undefined;
-        let wasCorrected = false;
+        const wasCorrected = false;
         const size = readPngSize(bytes);
         if (size && size.height > 0) {
           originalRatio = size.width / size.height;
-          const withinTol = Math.abs(originalRatio - TARGET_RATIO) / TARGET_RATIO <= TOLERANCE;
-          if (!withinTol) {
-            bytes = await toHorizontalCanvas(bytes);
-            const sz2 = readPngSize(bytes);
-            finalRatio = sz2 ? sz2.width / sz2.height : undefined;
-            wasCorrected = true;
-          } else {
-            finalRatio = originalRatio;
-          }
+          finalRatio = originalRatio;
         }
+
 
         const path = `${userId}/enhanced/${listingId}/${img.id}.png`;
         const { error: upErr } = await admin.storage.from(BUCKET).upload(path, bytes, {
