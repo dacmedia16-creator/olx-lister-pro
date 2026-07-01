@@ -1,45 +1,22 @@
 ## Objetivo
+Garantir que cada foto tratada custe no máximo ~US$ 0,02, reduzindo o gasto da OpenAI.
 
-Antes de disparar o tratamento em lote (`enhance-listing-images`), abrir um `AlertDialog` mostrando quantidade de fotos e custo estimado em USD, exigindo confirmação explícita do usuário.
+## Contexto
+Hoje `enhance-listing-images` usa `gpt-image-1` com `quality: "high"` e `size: 1536x1024`, o que custa ~US$ 0,17–0,25 por imagem. Para ficar em ~US$ 0,02 é preciso usar `quality: "low"` (única faixa que bate esse teto no `gpt-image-1`).
 
-## Escopo
+## Mudanças
 
-Apenas frontend — `src/routes/_authenticated/listings.$id.tsx`. Nenhuma mudança na Edge Function, banco ou preço real (a Edge continua chamando OpenAI com `quality: high`, `size: 1536x1024`).
+### 1. Edge Function `supabase/functions/enhance-listing-images/index.ts`
+- Trocar `form.append("quality", "high")` por `"low"`.
+- Definir constante `COST_PER_IMAGE_USD = 0.02` e usar no log de custo (`processing_logs`) para refletir o novo valor.
+- Ajustar o prompt: manter pedido de nitidez, mas remover exigências que dependem de `high` (ex.: "ultra-detalhado"), evitando frustração com resultado incompatível com `low`.
 
-O botão individual "Tratar" por foto **não** recebe confirmação (é 1 clique = 1 imagem, sem lote). Só o botão "Tratar fotos com IA" / "Retratar com IA".
+### 2. Frontend `src/routes/_authenticated/listings.$id.tsx`
+- Atualizar `COST_PER_IMAGE_USD` de `0.19` para `0.02`.
+- No `AlertDialog` de confirmação, incluir aviso: "Modo econômico ativo (qualidade baixa, ~US$ 0,02/foto). O resultado pode ter menos nitidez que antes."
 
-## Implementação
+## Trade-off explícito ao usuário
+`quality: "low"` corta o custo em ~10x, mas reduz a fidelidade. Se depois quiser um meio-termo, dá para subir para `medium` (~US$ 0,04/foto) — só avisar.
 
-1. **Constante de custo** no topo do arquivo:
-   ```ts
-   // Custo aproximado por imagem: gpt-image-1, quality=high, size=1536x1024
-   const COST_PER_IMAGE_USD = 0.19;
-   ```
-   Valor baseado na tabela pública da OpenAI para `gpt-image-1` em `high` nessa resolução. Comentário explica de onde vem.
-
-2. **Novo estado** para controlar o diálogo:
-   ```ts
-   const [confirmOpen, setConfirmOpen] = useState(false);
-   const [pendingCount, setPendingCount] = useState(0);
-   ```
-
-3. **Novo handler `openEnhanceConfirm`**: consulta rápida no Supabase para contar quantas imagens têm `original_external_url` (mesma lógica que hoje monta a `queue`), guarda em `pendingCount` e abre o diálogo. Se `0`, mostra `toast.error` como já faz e não abre.
-
-4. **Trocar `onClick={enhance}` do botão principal** por `onClick={openEnhanceConfirm}`. A função `enhance` atual permanece igual e passa a ser chamada só quando o usuário confirma no diálogo.
-
-5. **`AlertDialog` novo** (já usamos `@/components/ui/alert-dialog` no projeto para exclusão) renderizado no final do JSX, com:
-   - Título: "Confirmar tratamento com IA"
-   - Descrição incluindo:
-     - `{pendingCount} foto(s)` serão processadas
-     - Custo estimado: `US$ {(pendingCount * COST_PER_IMAGE_USD).toFixed(2)}` (`~US$ 0,19 por foto`)
-     - Aviso curto: "Retratar sobrescreve as fotos já tratadas e gera novo custo."
-   - Ações: "Cancelar" (fecha) e "Confirmar e tratar" (fecha + chama `enhance()`).
-
-## Fora do escopo
-
-- Limite diário/orçamento por usuário.
-- Log de custo real por imagem em `processing_logs`.
-- Trocar `quality` para `medium`/`low`.
-- Confirmação no botão de retratar individual.
-
-Esses ficam para uma próxima iteração se você quiser.
+## Fora de escopo
+- Limite diário por usuário, cache de retratamento e orçamento por conta (posso propor depois se quiser).
