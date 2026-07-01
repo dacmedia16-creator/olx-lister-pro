@@ -3,6 +3,7 @@
 // Prompt fixo: "Melhore a imagem sem mudar o ambiente, deixe na horizontal."
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { decode as decodeImage, Image } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,20 +15,51 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 const BUCKET = "olx-images";
-const PROMPT = "Melhore a imagem sem mudar o ambiente, deixe na horizontal.";
+const PROMPT = "Melhore a foto do imóvel mantendo o ambiente real (paredes, piso, teto, móveis, iluminação). A imagem está em formato horizontal 16:9 com bordas brancas nas laterais — preencha essas bordas estendendo naturalmente o mesmo ambiente de forma coerente e realista, sem inventar móveis novos, sem mudar cores nem estilo. Resultado final deve ser sempre horizontal (paisagem).";
+const TARGET_W = 1536;
+const TARGET_H = 864;
 const MODEL = "google/gemini-2.5-flash-image";
 
-async function fetchAsDataUrl(url: string): Promise<{ dataUrl: string; contentType: string } | null> {
+async function fetchBytes(url: string): Promise<Uint8Array | null> {
   try {
     const r = await fetch(url, { headers: { "Referer": "https://www.olx.com.br/" } });
     if (!r.ok) return null;
-    const ct = r.headers.get("content-type") || "image/jpeg";
-    const buf = new Uint8Array(await r.arrayBuffer());
-    let bin = "";
-    for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
-    const b64 = btoa(bin);
-    return { dataUrl: `data:${ct};base64,${b64}`, contentType: ct };
+    return new Uint8Array(await r.arrayBuffer());
   } catch { return null; }
+}
+
+function bytesToDataUrl(bytes: Uint8Array, contentType: string): string {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk) as unknown as number[]);
+  }
+  return `data:${contentType};base64,${btoa(bin)}`;
+}
+
+// Converte qualquer foto em um canvas horizontal 16:9 (TARGET_W x TARGET_H) com letterbox branco.
+// Isso força o Gemini a devolver saída horizontal (ele preserva o aspect ratio da entrada).
+async function toHorizontalCanvas(bytes: Uint8Array): Promise<Uint8Array> {
+  const decoded = await decodeImage(bytes);
+  const src = decoded as Image;
+  const srcW = src.width;
+  const srcH = src.height;
+  const targetRatio = TARGET_W / TARGET_H;
+  const srcRatio = srcW / srcH;
+  let drawW: number, drawH: number;
+  if (srcRatio > targetRatio) {
+    drawW = TARGET_W;
+    drawH = Math.round(TARGET_W / srcRatio);
+  } else {
+    drawH = TARGET_H;
+    drawW = Math.round(TARGET_H * srcRatio);
+  }
+  const resized = src.clone().resize(drawW, drawH);
+  const canvas = new Image(TARGET_W, TARGET_H).fill(0xffffffff);
+  const offX = Math.floor((TARGET_W - drawW) / 2);
+  const offY = Math.floor((TARGET_H - drawH) / 2);
+  canvas.composite(resized, offX, offY);
+  return await canvas.encode(); // PNG
 }
 
 function extractImageB64FromResponse(json: any): string | null {
@@ -134,9 +166,11 @@ Deno.serve(async (req) => {
     const results: Array<{ id: string; ok: boolean; error?: string }> = [];
     for (const img of targets) {
       try {
-        const src = await fetchAsDataUrl(img.original_external_url!);
-        if (!src) throw new Error("Falha ao baixar imagem original");
-        const b64 = await callGeminiEdit(src.dataUrl);
+        const srcBytes = await fetchBytes(img.original_external_url!);
+        if (!srcBytes) throw new Error("Falha ao baixar imagem original");
+        const horizontalPng = await toHorizontalCanvas(srcBytes);
+        const dataUrl = bytesToDataUrl(horizontalPng, "image/png");
+        const b64 = await callGeminiEdit(dataUrl);
         const bytes = b64ToBytes(b64);
         const path = `${userId}/enhanced/${listingId}/${img.id}.png`;
         const { error: upErr } = await admin.storage.from(BUCKET).upload(path, bytes, {
