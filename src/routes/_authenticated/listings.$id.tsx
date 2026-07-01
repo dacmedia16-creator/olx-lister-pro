@@ -53,6 +53,7 @@ type Listing = {
   extracted_at: string | null;
   olx_pay_enabled: boolean | null;
   olx_delivery_enabled: boolean | null;
+  images_source: string | null;
 };
 
 type Image = { id: string; original_external_url: string | null; original_storage_path: string | null; status: string; position: number | null };
