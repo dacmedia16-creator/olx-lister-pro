@@ -105,16 +105,27 @@ async function mapListing(user_id: string, source_url: string, gecko: any) {
   const d = getListingRoot(gecko);
   const seller = pick<any>(d, ["seller", "user", "advertiser"]) ?? {};
   const location = pick<any>(d, ["location", "address"]) ?? {};
-  const phones: any[] =
-    pick<any[]>(d, ["seller.phones", "phones", "contact.phones"]) ?? [];
-  const phoneHashes = await Promise.all(
-    (Array.isArray(phones) ? phones : [])
-      .map((p: any) => (typeof p === "string" ? p : p?.number || p?.phone))
-      .filter(Boolean)
-      .map((p: string) => sha256(p)),
-  );
-  const sellerName = seller?.name || seller?.displayName;
-  const sellerHash = sellerName ? await sha256(String(sellerName)) : null;
+
+  // Telefones: schema oficial entrega hasheados em `phoneHashes`; fallback para brutos.
+  let phoneHashes: string[] = [];
+  const preHashed = pick<any[]>(d, ["phoneHashes", "phone_hashes"]);
+  if (Array.isArray(preHashed)) {
+    phoneHashes = preHashed.filter((x) => typeof x === "string");
+  } else {
+    const rawPhones = pick<any[]>(d, ["seller.phones", "phones", "contact.phones"]) ?? [];
+    phoneHashes = await Promise.all(
+      rawPhones
+        .map((p: any) => (typeof p === "string" ? p : p?.number || p?.phone))
+        .filter(Boolean)
+        .map((p: string) => sha256(p)),
+    );
+  }
+
+  // Nome: PDP oficial já traz `nameHash`; se vier `name` cru, hasheia.
+  let sellerHash: string | null = seller?.nameHash ?? seller?.name_hash ?? null;
+  if (!sellerHash && (seller?.name || seller?.displayName)) {
+    sellerHash = await sha256(String(seller.name ?? seller.displayName));
+  }
 
   return {
     user_id,
@@ -145,7 +156,8 @@ async function mapListing(user_id: string, source_url: string, gecko: any) {
     olx_delivery_enabled: pick<boolean>(d, ["olxDelivery", "olx_delivery", "olxDeliveryEnabled"]) ?? null,
     request_id: gecko?.requestId ?? null,
     execution_id: gecko?.executionId ?? null,
-    extracted_at: gecko?.extractedAt ?? null,
+    // extractedAt oficial fica em gecko.data.extractedAt (não no root)
+    extracted_at: gecko?.data?.extractedAt ?? gecko?.extractedAt ?? null,
   };
 }
 
