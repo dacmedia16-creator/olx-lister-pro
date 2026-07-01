@@ -17,9 +17,14 @@ export type Database = {
       listing_images: {
         Row: {
           created_at: string
+          enhanced_at: string | null
+          enhanced_storage_path: string | null
+          enhancement_prompt: string | null
+          enhancement_status: string | null
           error_message: string | null
           id: string
           listing_id: string
+          openai_response_id: string | null
           original_external_url: string
           original_storage_path: string | null
           position: number | null
@@ -29,9 +34,14 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          enhanced_at?: string | null
+          enhanced_storage_path?: string | null
+          enhancement_prompt?: string | null
+          enhancement_status?: string | null
           error_message?: string | null
           id?: string
           listing_id: string
+          openai_response_id?: string | null
           original_external_url: string
           original_storage_path?: string | null
           position?: number | null
@@ -41,9 +51,14 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          enhanced_at?: string | null
+          enhanced_storage_path?: string | null
+          enhancement_prompt?: string | null
+          enhancement_status?: string | null
           error_message?: string | null
           id?: string
           listing_id?: string
+          openai_response_id?: string | null
           original_external_url?: string
           original_storage_path?: string | null
           position?: number | null
@@ -202,6 +217,171 @@ export type Database = {
           updated_at?: string
           user_id?: string
           zip_code?: string | null
+        }
+        Relationships: []
+      }
+      olx_search_results: {
+        Row: {
+          category: string | null
+          category_id: string | null
+          chat_enabled: boolean | null
+          city: string | null
+          condition: string | null
+          created_at: string
+          external_id: string | null
+          featured: boolean | null
+          id: string
+          image_count: number | null
+          imported_listing_id: string | null
+          listed_at: string | null
+          location_display: string | null
+          main_image_url: string | null
+          neighborhood: string | null
+          price: number | null
+          price_display: string | null
+          professional_ad: boolean | null
+          properties_json: Json | null
+          search_id: string
+          source_url: string
+          state: string | null
+          title: string | null
+          user_id: string
+        }
+        Insert: {
+          category?: string | null
+          category_id?: string | null
+          chat_enabled?: boolean | null
+          city?: string | null
+          condition?: string | null
+          created_at?: string
+          external_id?: string | null
+          featured?: boolean | null
+          id?: string
+          image_count?: number | null
+          imported_listing_id?: string | null
+          listed_at?: string | null
+          location_display?: string | null
+          main_image_url?: string | null
+          neighborhood?: string | null
+          price?: number | null
+          price_display?: string | null
+          professional_ad?: boolean | null
+          properties_json?: Json | null
+          search_id: string
+          source_url: string
+          state?: string | null
+          title?: string | null
+          user_id: string
+        }
+        Update: {
+          category?: string | null
+          category_id?: string | null
+          chat_enabled?: boolean | null
+          city?: string | null
+          condition?: string | null
+          created_at?: string
+          external_id?: string | null
+          featured?: boolean | null
+          id?: string
+          image_count?: number | null
+          imported_listing_id?: string | null
+          listed_at?: string | null
+          location_display?: string | null
+          main_image_url?: string | null
+          neighborhood?: string | null
+          price?: number | null
+          price_display?: string | null
+          professional_ad?: boolean | null
+          properties_json?: Json | null
+          search_id?: string
+          source_url?: string
+          state?: string | null
+          title?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "olx_search_results_imported_listing_id_fkey"
+            columns: ["imported_listing_id"]
+            isOneToOne: false
+            referencedRelation: "olx_listings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "olx_search_results_search_id_fkey"
+            columns: ["search_id"]
+            isOneToOne: false
+            referencedRelation: "olx_searches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      olx_searches: {
+        Row: {
+          category_path: string | null
+          city: string | null
+          created_at: string
+          error_message: string | null
+          execution_id: string | null
+          id: string
+          keyword: string | null
+          next_page: number | null
+          next_page_url: string | null
+          page: number | null
+          price_max: number | null
+          price_min: number | null
+          region: string | null
+          request_id: string | null
+          search_url: string | null
+          sort: string | null
+          state: string | null
+          status: string
+          total_results: number | null
+          user_id: string
+        }
+        Insert: {
+          category_path?: string | null
+          city?: string | null
+          created_at?: string
+          error_message?: string | null
+          execution_id?: string | null
+          id?: string
+          keyword?: string | null
+          next_page?: number | null
+          next_page_url?: string | null
+          page?: number | null
+          price_max?: number | null
+          price_min?: number | null
+          region?: string | null
+          request_id?: string | null
+          search_url?: string | null
+          sort?: string | null
+          state?: string | null
+          status?: string
+          total_results?: number | null
+          user_id: string
+        }
+        Update: {
+          category_path?: string | null
+          city?: string | null
+          created_at?: string
+          error_message?: string | null
+          execution_id?: string | null
+          id?: string
+          keyword?: string | null
+          next_page?: number | null
+          next_page_url?: string | null
+          page?: number | null
+          price_max?: number | null
+          price_min?: number | null
+          region?: string | null
+          request_id?: string | null
+          search_url?: string | null
+          sort?: string | null
+          state?: string | null
+          status?: string
+          total_results?: number | null
+          user_id?: string
         }
         Relationships: []
       }
