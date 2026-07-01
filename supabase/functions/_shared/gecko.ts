@@ -26,7 +26,7 @@ export function normalizeUrl(raw: unknown): string | null {
 
 
 // Extract candidate URL from an image-like object (or plain string).
-function pickUrl(item: any): string | null {
+function pickUrl(item: any, depth = 0): string | null {
   if (item == null) return null;
   if (typeof item === "string") return normalizeUrl(item);
   if (typeof item !== "object") return null;
@@ -34,12 +34,25 @@ function pickUrl(item: any): string | null {
   const candidates = [
     item.original,
     item.originalUrl,
+    item.original_url,
     item.large,
     item.big,
     item.xlarge,
+    item.high,
+    item.full,
+    item.imageUrl,
+    item.imageURL,
+    item.image_url,
+    item.secureUrl,
+    item.secure_url,
+    item.contentUrl,
+    item.content_url,
     item.url,
     item.src,
+    item.uri,
+    item.link,
     item.href,
+    item.path,
     item.medium,
     item.thumb,
     item.thumbnail,
@@ -48,6 +61,14 @@ function pickUrl(item: any): string | null {
   for (const c of candidates) {
     const n = normalizeUrl(c);
     if (n) return n;
+    if (depth < 2 && c && typeof c === "object") {
+      const nested = pickUrl(c, depth + 1);
+      if (nested) return nested;
+    }
+  }
+  if (depth < 2) {
+    const deep = collectDeepImageUrls(item, 3);
+    if (deep.length > 0) return deep[0];
   }
   return null;
 }
@@ -145,6 +166,34 @@ function collectDeepImageUrls(root: any, maxDepth = 7): string[] {
   return out.slice(0, 40);
 }
 
+export function extractImageUrlsFromText(raw: string): string[] {
+  const variants = new Set<string>();
+  variants.add(raw);
+  variants.add(raw.replace(/\\u002F/g, "/").replace(/\\\//g, "/").replace(/&amp;/g, "&"));
+  try { variants.add(decodeURIComponent(raw)); } catch { /* ignore malformed encoded text */ }
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const text of variants) {
+    const matches = text.match(IMAGE_EXT_RE) ?? [];
+    for (const match of matches) {
+      const cleaned = match
+        .replace(/\\u002F/g, "/")
+        .replace(/\\\//g, "/")
+        .replace(/&amp;/g, "&")
+        .replace(/%7B/gi, "{")
+        .replace(/%7D/gi, "}");
+      const n = normalizeUrl(cleaned);
+      if (n && isLikelyImageUrl(n) && !seen.has(n)) {
+        seen.add(n);
+        out.push(n);
+      }
+      if (out.length >= 40) return out;
+    }
+  }
+  return out;
+}
+
 function mergeUrls(...groups: string[][]): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -162,7 +211,7 @@ function mergeUrls(...groups: string[][]): string[] {
 
 export function extractPlpImages(item: any): string[] {
   if (!item || typeof item !== "object") return [];
-  return collect([
+  const fieldImages = collect([
     item.images,
     item.photos,
     item.media,
@@ -172,6 +221,8 @@ export function extractPlpImages(item: any): string[] {
     item.mainImage,
     item.cover,
   ]);
+  const deepImages = fieldImages.length === 0 ? collectDeepImageUrls(item, 5) : [];
+  return mergeUrls(fieldImages, deepImages);
 }
 
 export function extractPdpImages(gecko: any): string[] {

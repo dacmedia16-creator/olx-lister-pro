@@ -2,7 +2,7 @@
 // Chama a GeckoAPI PDP para uma URL da OLX e persiste anúncio + URLs de fotos (sem baixar pro storage).
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { callGecko, extractPdpImageDiagnostics, extractPlpImages, isLikelyImageUrl, mapGeckoStatusMessage } from "../_shared/gecko.ts";
+import { callGecko, extractImageUrlsFromText, extractPdpImageDiagnostics, extractPlpImages, isLikelyImageUrl, mapGeckoStatusMessage } from "../_shared/gecko.ts";
 import { detectPortal, geckoPayloadFor, geckoSourceLabel, type Portal } from "../_shared/portals.ts";
 
 const corsHeaders = {
@@ -104,9 +104,17 @@ function normalizeSlug(raw: string | null | undefined): string {
 
 function getMatchInfo(sourceUrl: string, listingRoot?: any) {
   return {
-    normalizedUrl: normalizeOlxUrlForMatch(sourceUrl),
+    normalizedUrl: normalizeUrlForMatch(sourceUrl),
     ids: new Set([
-      ...collectIdCandidates(listingRoot?.listingId, listingRoot?.listing_id, listingRoot?.adId, listingRoot?.ad_id, listingRoot?.id),
+      ...collectIdCandidates(
+        listingRoot?.listingId,
+        listingRoot?.listing_id,
+        listingRoot?.adId,
+        listingRoot?.ad_id,
+        listingRoot?.id,
+        listingRoot?.listingExternalId,
+        listingRoot?.externalId,
+      ),
       ...getUrlIds(sourceUrl),
     ]),
     slug: normalizeSlug(sourceUrl),
@@ -115,7 +123,7 @@ function getMatchInfo(sourceUrl: string, listingRoot?: any) {
 
 function scoreAdMatch(ad: any, source: ReturnType<typeof getMatchInfo>) {
   const adUrl = getAdUrl(ad);
-  const normalizedAdUrl = normalizeOlxUrlForMatch(adUrl);
+  const normalizedAdUrl = normalizeUrlForMatch(adUrl);
   const adIds = new Set([...getAdIds(ad), ...getUrlIds(adUrl)]);
   const sharedIds = Array.from(adIds).filter((id) => source.ids.has(id));
   const adSlug = normalizeSlug(adUrl);
@@ -131,7 +139,7 @@ function scoreAdMatch(ad: any, source: ReturnType<typeof getMatchInfo>) {
   return { score, reasons, adUrl, normalizedAdUrl, adIds: Array.from(adIds), adSlug };
 }
 
-function normalizeOlxUrlForMatch(raw: string | null | undefined): string {
+function normalizeUrlForMatch(raw: string | null | undefined): string {
   if (!raw) return "";
   try {
     const u = new URL(raw);
@@ -143,7 +151,204 @@ function normalizeOlxUrlForMatch(raw: string | null | undefined): string {
   }
 }
 
-function derivePlpFallbackUrls(sourceUrl: string, listingRoot?: any, title?: string | null): string[] {
+function slugifySearchPath(raw: string | null | undefined): string {
+  return String(raw ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function deriveZapPlpFallbackUrls(sourceUrl: string, listingRoot?: any, title?: string | null): string[] {
+  const urls: string[] = [];
+  const add = (raw: string | null | undefined) => {
+    if (!raw) return;
+    try {
+      const normalized = new URL(raw).toString();
+      if (!urls.includes(normalized)) urls.push(normalized);
+    } catch {
+      // ignore invalid fallback candidates
+    }
+  };
+
+  try {
+    const u = new URL(sourceUrl);
+    const origin = u.origin;
+    const path = u.pathname.split("/").filter(Boolean);
+    const city = slugifySearchPath(listingRoot?.address?.city);
+    const state = slugifySearchPath(listingRoot?.address?.stateAcronym ?? listingRoot?.address?.state);
+    const neighborhood = slugifySearchPath(listingRoot?.address?.neighborhood);
+    const isRent = /rent|alug/i.test(String(listingRoot?.businessType ?? listingRoot?.contractType ?? sourceUrl));
+    const business = isRent ? "aluguel" : "venda";
+    const rawType = String(listingRoot?.listingType ?? listingRoot?.unitType ?? listingRoot?.category ?? "imovel");
+    const type = /apart/i.test(rawType) ? "apartamentos" : /casa/i.test(rawType) ? "casas" : "imoveis";
+
+    if (path[0] === "imovel") {
+      const listingSlug = path[1] ?? "";
+      const stripped = listingSlug.replace(/-id-?\d+.*$/i, "");
+      if (stripped) add(`${origin}/busca/imoveis/${stripped}/`);
+    }
+    if (city && state) {
+      add(`${origin}/${business}/${type}/${state}+${city}/`);
+      if (neighborhood) add(`${origin}/${business}/${type}/${state}+${city}+${neighborhood}/`);
+      add(`${origin}/busca/imoveis/${state}+${city}/`);
+      if (neighborhood) add(`${origin}/busca/imoveis/${state}+${city}+${neighborhood}/`);
+    }
+    if (title) {
+      const q = encodeURIComponent(title.replace(/\s+/g, " ").trim());
+      add(`${origin}/busca/imoveis/?q=${q}`);
+    }
+  } catch {
+    // ignore malformed source URL; validation already happened upstream
+  }
+
+  return urls.slice(0, 6);
+}
+
+function getZapBusinessType(listingRoot?: any, sourceUrl?: string): "rent" | "sale" {
+  const raw = String(listingRoot?.businessType ?? listingRoot?.contractType ?? sourceUrl ?? "").toLowerCase();
+  if (/rent|rental|alug/.test(raw)) return "rent";
+  return "sale";
+}
+
+function getZapKeyword(listingRoot?: any, title?: string | null): string | null {
+  const listingType = String(listingRoot?.listingType ?? "").toLowerCase();
+  const titleText = String(title ?? listingRoot?.title ?? "").toLowerCase();
+  if (/apart/.test(listingType) || /apart/.test(titleText)) return "apartamento";
+  if (/casa/.test(listingType) || /casa/.test(titleText)) return "casa";
+  return null;
+}
+
+function parseZapAddressFallback(listingRoot?: any): { city: string | null; state: string | null; neighborhood: string | null } {
+  const formatted = String(listingRoot?.formattedAddress ?? "");
+  const match = formatted.match(/([^,\-]+)\s*-\s*([A-Z]{2})(?:\b|,)/i);
+  const beforeCity = formatted.split(",")[0] ?? "";
+  const neighborhood = beforeCity.includes(" - ") ? beforeCity.split(" - ").pop()?.trim() : null;
+  return {
+    city: match?.[1]?.trim() || null,
+    state: match?.[2]?.toUpperCase() || null,
+    neighborhood: neighborhood || null,
+  };
+}
+
+function numberFromText(raw: unknown, re: RegExp): number | null {
+  const match = String(raw ?? "").match(re);
+  if (!match?.[1]) return null;
+  const n = Number(match[1].replace(/\D/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function getZapBedroomCount(listingRoot?: any, title?: string | null): number | null {
+  const attrs = [listingRoot?.bedrooms, listingRoot?.bedroom, listingRoot?.suites, ...(Array.isArray(listingRoot?.amenities) ? listingRoot.amenities : [])];
+  for (const a of attrs) {
+    const n = typeof a === "number" ? a : numberFromText(a, /(\d+)\s*(?:quartos?|dormit[oó]rios?)/i);
+    if (n) return n;
+  }
+  return numberFromText(`${title ?? ""} ${listingRoot?.title ?? ""} ${listingRoot?.description ?? ""}`, /(\d+)\s*(?:quartos?|dormit[oó]rios?)/i);
+}
+
+function getZapArea(listingRoot?: any, title?: string | null): number | null {
+  const candidates = [listingRoot?.area, listingRoot?.usableArea, listingRoot?.totalArea, listingRoot?.unitArea, title, listingRoot?.title, listingRoot?.description];
+  for (const c of candidates) {
+    if (typeof c === "number" && c > 0) return c;
+    const n = numberFromText(c, /(\d+)\s*m[²2]/i);
+    if (n) return n;
+  }
+  return null;
+}
+
+function getZapNumericArray(listingRoot: any, keys: string[], labelRe: RegExp): number[] | null {
+  for (const key of keys) {
+    const value = key.split(".").reduce((acc: any, part) => acc?.[part], listingRoot);
+    const n = typeof value === "number" ? value : numberFromText(value, labelRe);
+    if (n) return [n];
+  }
+  const text = `${listingRoot?.title ?? ""} ${listingRoot?.description ?? ""}`;
+  const n = numberFromText(text, labelRe);
+  return n ? [n] : null;
+}
+
+function getZapPrice(listingRoot?: any): number | null {
+  const candidates = [listingRoot?.prices?.price, listingRoot?.prices?.mainValue, listingRoot?.price, listingRoot?.mainValue];
+  for (const c of candidates) {
+    if (typeof c === "number" && c > 0) return c;
+    if (typeof c === "string") {
+      const n = Number(c.replace(/[^\d,.-]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", "."));
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  }
+  return null;
+}
+
+function getZapLatLng(listingRoot?: any): { latitude: number; longitude: number } | null {
+  const lat = Number(listingRoot?.address?.latitude ?? listingRoot?.address?.lat ?? listingRoot?.latitude ?? listingRoot?.lat);
+  const lng = Number(listingRoot?.address?.longitude ?? listingRoot?.address?.lng ?? listingRoot?.longitude ?? listingRoot?.lng);
+  if (Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0) return { latitude: lat, longitude: lng };
+  return null;
+}
+
+function pushUniquePayload(out: Record<string, any>[], payload: Record<string, any>) {
+  const clean = Object.fromEntries(Object.entries(payload).filter(([, v]) => v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0)));
+  const key = JSON.stringify(clean, Object.keys(clean).sort());
+  if (!out.some((p) => JSON.stringify(p, Object.keys(p).sort()) === key)) out.push(clean);
+}
+
+function buildPlpPayloads(portal: Portal, plpUrl: string, sourceUrl: string, listingRoot?: any, title?: string | null): Record<string, any>[] {
+  if (portal !== "zap") return [{ target: geckoSourceLabel(portal), type: "plp", url: plpUrl }];
+
+  const addressFallback = parseZapAddressFallback(listingRoot);
+  const city = listingRoot?.address?.city ?? addressFallback.city;
+  const state = listingRoot?.address?.stateAcronym ?? listingRoot?.address?.state ?? addressFallback.state;
+  if (!city || !state) return [];
+
+  const base: Record<string, any> = {
+    target: "zapimoveis.com.br",
+    type: "plp",
+    city: String(city),
+    state: String(state).slice(0, 2).toUpperCase(),
+    businessType: getZapBusinessType(listingRoot, sourceUrl),
+  };
+  const keyword = getZapKeyword(listingRoot, title);
+  const area = getZapArea(listingRoot, title);
+  const bedrooms = getZapBedroomCount(listingRoot, title);
+  const latLng = getZapLatLng(listingRoot);
+  const sourceIds = getMatchInfo(sourceUrl, listingRoot).ids;
+  const numericId = Array.from(sourceIds).find((id) => /^\d{8,}$/.test(id));
+
+  const filters: Record<string, any> = {
+    ...(bedrooms ? { bedrooms: [bedrooms] } : {}),
+  };
+
+  const payloads: Record<string, any>[] = [];
+  if (numericId) pushUniquePayload(payloads, { ...base, keyword: numericId, page: 1 });
+  if (latLng) for (let page = 1; page <= 3; page++) pushUniquePayload(payloads, { ...base, ...latLng, page });
+
+  // O ZAP às vezes não retorna fotos no PDP, mas a PLP traz as imagens do card.
+  // Para não pegar foto errada, varremos páginas com filtro leve de quartos e fazemos match por ID/URL.
+  const pageLimit = bedrooms ? 12 : 6;
+  for (let page = 1; page <= pageLimit; page++) {
+    if (Object.keys(filters).length > 0) pushUniquePayload(payloads, { ...base, ...filters, page });
+    else pushUniquePayload(payloads, { ...base, page });
+  }
+
+  if (area && !bedrooms) {
+    for (let page = 1; page <= 4; page++) pushUniquePayload(payloads, { ...base, areaMin: Math.max(0, area - 20), areaMax: area + 20, page });
+  }
+
+  // Keyword textual no ZAP pode zerar resultados em alguns casos; por isso fica por último.
+  if (keyword) {
+    for (let page = 1; page <= 2; page++) pushUniquePayload(payloads, { ...base, keyword, page });
+  }
+
+  return payloads.slice(0, 18);
+}
+
+function derivePlpFallbackUrls(sourceUrl: string, listingRoot?: any, title?: string | null, portal: Portal = "olx"): string[] {
+  // A PLP do ZAP na GeckoAPI não aceita URL direta; usa city/state/businessType.
+  // Retornamos apenas um marcador para não repetir o mesmo conjunto de payloads.
+  if (portal === "zap") return [sourceUrl];
+
   const urls: string[] = [];
   const add = (raw: string | null | undefined) => {
     if (!raw) return;
@@ -189,8 +394,8 @@ function derivePlpFallbackUrls(sourceUrl: string, listingRoot?: any, title?: str
   return urls.slice(0, 4);
 }
 
-async function fetchPlpFallbackImages(url: string, apiKey: string, listingRoot?: any, title?: string | null) {
-  const plpUrls = derivePlpFallbackUrls(url, listingRoot, title);
+async function fetchPlpFallbackImages(url: string, apiKey: string, portal: Portal, listingRoot?: any, title?: string | null) {
+  const plpUrls = derivePlpFallbackUrls(url, listingRoot, title, portal);
   if (plpUrls.length === 0) {
     return { urls: [] as string[], plpUrl: null as string | null, itemCount: 0, matched: false, requestId: null as string | null, attempts: [] as any[] };
   }
@@ -201,13 +406,20 @@ async function fetchPlpFallbackImages(url: string, apiKey: string, listingRoot?:
   let lastItemCount = 0;
 
   for (const plpUrl of plpUrls) {
-    const r = await callGecko(
-      { target: "olx.com.br", type: "plp", url: plpUrl },
-      { apiKey, label: "plp-image-fallback", retries: 0, timeoutMs: 18000 },
-    );
+    const payloads = buildPlpPayloads(portal, plpUrl, url, listingRoot, title);
+    if (payloads.length === 0) {
+      attempts.push({ url: plpUrl, ok: false, status: 0, error: "Dados insuficientes para PLP", request_id: null });
+      continue;
+    }
+
+    for (const payload of payloads) {
+      const r = await callGecko(
+        payload,
+        { apiKey, label: `plp-image-fallback-${portal}`, retries: 0, timeoutMs: 18000 },
+      );
     lastRequestId = r.requestId ?? null;
     if (!r.ok || r.body?.notFound === true) {
-      attempts.push({ url: plpUrl, ok: false, status: r.status, request_id: lastRequestId });
+      attempts.push({ url: plpUrl, ok: false, status: r.status, request_id: lastRequestId, payload });
       continue;
     }
 
@@ -221,6 +433,7 @@ async function fetchPlpFallbackImages(url: string, apiKey: string, listingRoot?:
 
     attempts.push({
       url: plpUrl,
+      payload,
       ok: true,
       item_count: ads.length,
       request_id: lastRequestId,
@@ -245,6 +458,7 @@ async function fetchPlpFallbackImages(url: string, apiKey: string, listingRoot?:
         };
       }
     }
+    }
   }
 
   return {
@@ -255,6 +469,27 @@ async function fetchPlpFallbackImages(url: string, apiKey: string, listingRoot?:
     requestId: lastRequestId,
     attempts,
   };
+}
+
+async function fetchZapPublicPageImages(url: string) {
+  const started = Date.now();
+  try {
+    const resp = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+    });
+    const text = await resp.text();
+    return {
+      ok: resp.ok,
+      status: resp.status,
+      urls: extractImageUrlsFromText(text),
+      ms: Date.now() - started,
+    };
+  } catch (e: any) {
+    return { ok: false, status: 0, urls: [] as string[], ms: Date.now() - started, error: String(e?.message ?? e) };
+  }
 }
 
 async function mapListing(user_id: string, source_url: string, gecko: any, portal: Portal) {
@@ -455,6 +690,7 @@ Deno.serve(async (req) => {
         let imageUrls = imageDiagnostics.urls;
         let imageSource = imageUrls.length > 0 ? "pdp" : "none";
         let plpFallback: Awaited<ReturnType<typeof fetchPlpFallbackImages>> | null = null;
+        let publicPageFallback: Awaited<ReturnType<typeof fetchZapPublicPageImages>> | null = null;
         if (imageUrls.length < 3) {
           const retry = await callGecko(
             geckoPayloadFor(portal, url),
@@ -470,12 +706,20 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Fallback PLP só existe para OLX; ZAP fica só com PDP.
-        if (imageUrls.length === 0 && portal === "olx") {
-          plpFallback = await fetchPlpFallbackImages(url, GECKO_API_KEY, getListingRoot(gecko), mapped.title);
+        // Fallback PLP para OLX e ZAP, com match seguro por ID/URL/slug para evitar fotos de relacionados.
+        if (imageUrls.length === 0) {
+          plpFallback = await fetchPlpFallbackImages(url, GECKO_API_KEY, portal, getListingRoot(gecko), mapped.title);
           if (plpFallback.urls.length > 0) {
             imageUrls = plpFallback.urls;
             imageSource = "plp_fallback";
+          }
+        }
+
+        if (imageUrls.length === 0 && portal === "zap") {
+          publicPageFallback = await fetchZapPublicPageImages(url);
+          if (publicPageFallback.urls.length > 0) {
+            imageUrls = publicPageFallback.urls;
+            imageSource = "public_page_fallback";
           }
         }
         imageUrls = imageUrls.filter(isLikelyImageUrl);
@@ -494,6 +738,7 @@ Deno.serve(async (req) => {
               pdp_fields: imageDiagnostics.fieldImages.length,
               pdp_deep_scan: imageDiagnostics.deepImages.length,
               plp_fallback: plpFallback?.urls.length ?? 0,
+              public_page_fallback: publicPageFallback?.urls.length ?? 0,
             },
             plp_fallback: plpFallback ? {
               url: plpFallback.plpUrl,
@@ -501,6 +746,14 @@ Deno.serve(async (req) => {
               matched_listing: plpFallback.matched,
               request_id: plpFallback.requestId,
               attempts: plpFallback.attempts,
+            } : null,
+            public_page_fallback: publicPageFallback ? {
+              status: publicPageFallback.status,
+              ok: publicPageFallback.ok,
+              ms: publicPageFallback.ms,
+              count: publicPageFallback.urls.length,
+              sample: publicPageFallback.urls.slice(0, 3),
+              error: "error" in publicPageFallback ? publicPageFallback.error : null,
             } : null,
             image_fields: {
               images: Array.isArray(listingRoot?.images) ? listingRoot.images.slice(0, 3) : listingRoot?.images ?? null,
