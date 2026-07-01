@@ -141,23 +141,51 @@ function ListingDetail() {
     }
   }, [listing, load]);
 
+  const [enhanceProgress, setEnhanceProgress] = useState<{ done: number; total: number } | null>(null);
+
   const enhance = useCallback(async () => {
     setEnhancing(true);
+    setEnhanceProgress(null);
     try {
-      const { data, error } = await supabase.functions.invoke("enhance-listing-images", {
-        body: { listing_id: id },
-      });
-      if (error) throw error;
-      const results = (data as { results?: Array<{ ok: boolean }> })?.results ?? [];
-      const ok = results.filter((r) => r.ok).length;
-      toast.success(`Fotos tratadas: ${ok}/${results.length}`);
-      await load();
+      // Pega todas as imagens do anúncio com URL original
+      const { data: allImgs } = await supabase
+        .from("listing_images")
+        .select("id,original_external_url")
+        .eq("listing_id", id)
+        .order("position", { ascending: true });
+      const queue = (allImgs ?? [])
+        .filter((i: any) => i.original_external_url)
+        .map((i: any) => i.id as string);
+      if (queue.length === 0) {
+        toast.error("Nenhuma foto disponível para tratar");
+        return;
+      }
+      const total = queue.length;
+      let done = 0;
+      let ok = 0;
+      const BATCH = 2;
+      setEnhanceProgress({ done: 0, total });
+      for (let i = 0; i < queue.length; i += BATCH) {
+        const batch = queue.slice(i, i + BATCH);
+        const { data, error } = await supabase.functions.invoke("enhance-listing-images", {
+          body: { listing_id: id, image_ids: batch },
+        });
+        if (error) throw error;
+        const results = (data as { results?: Array<{ ok: boolean }> })?.results ?? [];
+        ok += results.filter((r) => r.ok).length;
+        done += batch.length;
+        setEnhanceProgress({ done, total });
+        await load();
+      }
+      toast.success(`Fotos tratadas: ${ok}/${total}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Falha ao tratar fotos");
     } finally {
       setEnhancing(false);
+      setEnhanceProgress(null);
     }
   }, [id, load]);
+
 
   const enhancedList = useMemo(
     () => images.filter((i) => i.enhanced_storage_path && i.enhancement_status === "done"),
