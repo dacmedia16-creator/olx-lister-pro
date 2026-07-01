@@ -163,7 +163,10 @@ Deno.serve(async (req) => {
       .update({ enhancement_status: "processing", enhancement_prompt: PROMPT })
       .in("id", targets.map((t: any) => t.id));
 
-    const results: Array<{ id: string; ok: boolean; error?: string }> = [];
+    const TARGET_RATIO = TARGET_W / TARGET_H; // 16:9 ≈ 1.777
+    const TOLERANCE = 0.03;
+
+    const results: Array<{ id: string; ok: boolean; error?: string; original_ratio?: number; final_ratio?: number; was_corrected?: boolean }> = [];
     for (const img of targets) {
       try {
         const srcBytes = await fetchBytes(img.original_external_url!);
@@ -171,7 +174,28 @@ Deno.serve(async (req) => {
         const horizontalPng = await toHorizontalCanvas(srcBytes);
         const dataUrl = bytesToDataUrl(horizontalPng, "image/png");
         const b64 = await callGeminiEdit(dataUrl);
-        const bytes = b64ToBytes(b64);
+        let bytes = b64ToBytes(b64);
+
+        // Validação: garantir que a saída está em 16:9 horizontal
+        let originalRatio: number | undefined;
+        let finalRatio: number | undefined;
+        let wasCorrected = false;
+        try {
+          const decoded = await decodeImage(bytes) as Image;
+          originalRatio = decoded.width / decoded.height;
+          const withinTol = Math.abs(originalRatio - TARGET_RATIO) / TARGET_RATIO <= TOLERANCE;
+          if (!withinTol) {
+            bytes = await toHorizontalCanvas(bytes);
+            const redecoded = await decodeImage(bytes) as Image;
+            finalRatio = redecoded.width / redecoded.height;
+            wasCorrected = true;
+          } else {
+            finalRatio = originalRatio;
+          }
+        } catch (decodeErr) {
+          throw new Error(`Falha ao decodificar imagem gerada: ${decodeErr instanceof Error ? decodeErr.message : String(decodeErr)}`);
+        }
+
         const path = `${userId}/enhanced/${listingId}/${img.id}.png`;
         const { error: upErr } = await admin.storage.from(BUCKET).upload(path, bytes, {
           contentType: "image/png",
@@ -184,7 +208,7 @@ Deno.serve(async (req) => {
           enhanced_at: new Date().toISOString(),
           error_message: null,
         }).eq("id", img.id);
-        results.push({ id: img.id, ok: true });
+        results.push({ id: img.id, ok: true, original_ratio: originalRatio, final_ratio: finalRatio, was_corrected: wasCorrected });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         await admin.from("listing_images").update({
