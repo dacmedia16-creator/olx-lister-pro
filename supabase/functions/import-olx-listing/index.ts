@@ -338,8 +338,8 @@ Deno.serve(async (req) => {
     if (Array.isArray(body?.urls)) urls.push(...body.urls.filter((x: any) => typeof x === "string"));
     urls = Array.from(new Set(urls.map((u: string) => u.trim()).filter(Boolean)));
     if (urls.length === 0) return json({ error: "Nenhuma URL enviada" }, 400);
-    const invalid = urls.filter((u) => !isValidOlxUrl(u));
-    if (invalid.length > 0) return json({ error: "URLs inválidas. Apenas olx.com.br é permitido.", invalid }, 400);
+    const invalid = urls.filter((u) => detectPortal(u) === null);
+    if (invalid.length > 0) return json({ error: "URLs inválidas. Apenas olx.com.br e zapimoveis.com.br são suportados.", invalid }, 400);
 
     const { data: jobIns, error: jobErr } = await userClient
       .from("olx_import_jobs")
