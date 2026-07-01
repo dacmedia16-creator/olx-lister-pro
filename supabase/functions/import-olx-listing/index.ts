@@ -307,7 +307,7 @@ Deno.serve(async (req) => {
 
         const { data: listingRow, error: upErr } = await userClient
           .from("olx_listings")
-          .upsert(mapped, { onConflict: "user_id,source_url" })
+          .upsert({ ...mapped, images_source: imageSource }, { onConflict: "user_id,source_url" })
           .select().single();
         if (upErr) {
           failed++;
