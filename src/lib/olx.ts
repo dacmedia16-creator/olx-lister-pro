@@ -1,12 +1,10 @@
+import { isValidListingUrl as isValidPortalUrl } from "./portals";
+
 export const OLX_URL_RE = /^https?:\/\/(?:[a-z0-9-]+\.)*olx\.com\.br\//i;
 
+// Compat: agora aceita OLX ou ZAP Imóveis
 export function isValidOlxUrl(u: string): boolean {
-  try {
-    const parsed = new URL(u.trim());
-    return OLX_URL_RE.test(parsed.toString());
-  } catch {
-    return false;
-  }
+  return isValidPortalUrl(u);
 }
 
 export function formatBRL(value: number | null | undefined): string {

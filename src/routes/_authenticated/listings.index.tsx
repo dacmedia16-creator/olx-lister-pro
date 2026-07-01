@@ -35,6 +35,7 @@ type Row = {
   category: string | null;
   listed_at: string | null;
   created_at: string;
+  source_portal: string | null;
 };
 
 type Img = { listing_id: string; original_external_url: string | null; position: number | null };
@@ -48,6 +49,7 @@ function ListingsPage() {
   const [q, setQ] = useState("");
   const [min, setMin] = useState("");
   const [max, setMax] = useState("");
+  const [portal, setPortal] = useState<"" | "olx" | "zap">("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const handleDelete = async (id: string) => {
@@ -67,7 +69,7 @@ function ListingsPage() {
     (async () => {
       let query = supabase
         .from("olx_listings")
-        .select("id,title,price,city,neighborhood,category,listed_at,created_at")
+        .select("id,title,price,city,neighborhood,category,listed_at,created_at,source_portal")
         .order("created_at", { ascending: false })
         .limit(200);
       if (city) query = query.ilike("city", `%${city}%`);
@@ -76,10 +78,11 @@ function ListingsPage() {
       if (q) query = query.ilike("title", `%${q}%`);
       if (min) query = query.gte("price", Number(min));
       if (max) query = query.lte("price", Number(max));
+      if (portal) query = query.eq("source_portal", portal);
       const { data } = await query;
       setRows((data as Row[]) ?? []);
     })();
-  }, [city, neighborhood, category, q, min, max]);
+  }, [city, neighborhood, category, q, min, max, portal]);
 
   const ids = useMemo(() => rows.map((r) => r.id), [rows]);
   useEffect(() => {
@@ -110,8 +113,20 @@ function ListingsPage() {
           <div className="space-y-1"><Label>Título</Label><Input value={q} onChange={(e) => setQ(e.target.value)} /></div>
           <div className="space-y-1"><Label>Preço mín.</Label><Input type="number" value={min} onChange={(e) => setMin(e.target.value)} /></div>
           <div className="space-y-1"><Label>Preço máx.</Label><Input type="number" value={max} onChange={(e) => setMax(e.target.value)} /></div>
+          <div className="space-y-1">
+            <Label>Portal</Label>
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              value={portal}
+              onChange={(e) => setPortal(e.target.value as "" | "olx" | "zap")}
+            >
+              <option value="">Todos</option>
+              <option value="olx">OLX</option>
+              <option value="zap">ZAP Imóveis</option>
+            </select>
+          </div>
           <div className="md:col-span-6">
-            <Button variant="ghost" size="sm" onClick={() => { setCity(""); setNeighborhood(""); setCategory(""); setQ(""); setMin(""); setMax(""); }}>Limpar filtros</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setCity(""); setNeighborhood(""); setCategory(""); setQ(""); setMin(""); setMax(""); setPortal(""); }}>Limpar filtros</Button>
           </div>
         </CardContent>
       </Card>
@@ -135,6 +150,9 @@ function ListingsPage() {
                         </span>
                       </>
                     )}
+                    <span className={`absolute left-2 top-2 rounded px-1.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur ${l.source_portal === "zap" ? "bg-blue-600/90" : "bg-purple-600/90"}`}>
+                      {l.source_portal === "zap" ? "ZAP" : "OLX"}
+                    </span>
                   </div>
                   <CardContent className="space-y-1 py-3">
                     <div className="line-clamp-2 text-sm font-medium">{l.title ?? "(sem título)"}</div>

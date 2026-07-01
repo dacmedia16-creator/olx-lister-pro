@@ -3,6 +3,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { callGecko, extractPdpImageDiagnostics, extractPlpImages, isLikelyImageUrl, mapGeckoStatusMessage } from "../_shared/gecko.ts";
+import { detectPortal, geckoPayloadFor, geckoSourceLabel, type Portal } from "../_shared/portals.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,9 +14,6 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
 const GECKO_API_KEY = Deno.env.get("GECKO_API_KEY");
-
-const OLX_URL_RE = /^https?:\/\/(?:[a-z0-9-]+\.)*olx\.com\.br\//i;
-const isValidOlxUrl = (u: string) => { try { return OLX_URL_RE.test(new URL(u).toString()); } catch { return false; } };
 
 async function sha256(input: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
@@ -259,9 +257,9 @@ async function fetchPlpFallbackImages(url: string, apiKey: string, listingRoot?:
   };
 }
 
-async function mapListing(user_id: string, source_url: string, gecko: any) {
+async function mapListing(user_id: string, source_url: string, gecko: any, portal: Portal) {
   const d = getListingRoot(gecko);
-  const seller = pick<any>(d, ["seller", "user", "advertiser"]) ?? {};
+  const seller = pick<any>(d, ["seller", "user", "advertiser", "account", "publisher"]) ?? {};
   const location = pick<any>(d, ["location", "address"]) ?? {};
 
   let phoneHashes: string[] = [];
@@ -269,7 +267,7 @@ async function mapListing(user_id: string, source_url: string, gecko: any) {
   if (Array.isArray(preHashed)) {
     phoneHashes = preHashed.filter((x) => typeof x === "string");
   } else {
-    const rawPhones = pick<any[]>(d, ["seller.phones", "phones", "contact.phones"]) ?? [];
+    const rawPhones = pick<any[]>(d, ["seller.phones", "phones", "contact.phones", "account.phones"]) ?? [];
     phoneHashes = await Promise.all(
       rawPhones.map((p: any) => (typeof p === "string" ? p : p?.number || p?.phone)).filter(Boolean).map((p: string) => sha256(p)),
     );
@@ -280,18 +278,26 @@ async function mapListing(user_id: string, source_url: string, gecko: any) {
     sellerHash = await sha256(String(seller.name ?? seller.displayName));
   }
 
+  const rawPrice = pick<any>(d, ["price.value", "price", "priceValue", "pricingInfos.price", "pricingInfos.0.price"]);
+  const price = typeof rawPrice === "number"
+    ? rawPrice
+    : (typeof rawPrice === "string" ? Number(rawPrice.replace(/[^\d,.-]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", ".")) || null : null);
+
   return {
-    user_id, source: "olx.com.br", source_url,
+    user_id,
+    source: geckoSourceLabel(portal),
+    source_portal: portal,
+    source_url,
     listing_id: pick<string>(d, ["listingId", "listing_id", "id"]) ?? null,
     ad_id: pick<string>(d, ["adId", "ad_id"]) ?? null,
     title: pick<string>(d, ["title", "name"]) ?? null,
     description: pick<string>(d, ["description", "body"]) ?? null,
-    price: pick<number>(d, ["price.value", "price", "priceValue"]) ?? null,
+    price,
     currency: pick<string>(d, ["price.currency", "currency"]) ?? "BRL",
-    listed_at: pick<string>(d, ["listedAt", "listed_at", "publishedAt", "createdAt"]) ?? null,
-    category: pick<string>(d, ["category", "categoryName"]) ?? null,
-    main_category: pick<string>(d, ["mainCategory", "main_category"]) ?? null,
-    sub_category: pick<string>(d, ["subCategory", "sub_category"]) ?? null,
+    listed_at: pick<string>(d, ["listedAt", "listed_at", "publishedAt", "createdAt", "createdDate"]) ?? null,
+    category: pick<string>(d, ["category", "categoryName", "unitType"]) ?? null,
+    main_category: pick<string>(d, ["mainCategory", "main_category", "portal"]) ?? null,
+    sub_category: pick<string>(d, ["subCategory", "sub_category", "usageType"]) ?? null,
     state: pick<string>(location, ["state", "uf"]) ?? null,
     city: pick<string>(location, ["city", "municipality"]) ?? null,
     neighborhood: pick<string>(location, ["neighborhood", "neighbourhood", "district"]) ?? null,
@@ -302,7 +308,7 @@ async function mapListing(user_id: string, source_url: string, gecko: any) {
     seller_name_hash: sellerHash,
     seller_is_professional: seller?.isProfessional ?? seller?.professional ?? null,
     phone_hashes: phoneHashes.length ? phoneHashes : null,
-    attributes_json: pick<any>(d, ["attributes", "properties", "specs"]) ?? null,
+    attributes_json: pick<any>(d, ["attributes", "properties", "specs", "amenities"]) ?? null,
     olx_pay_enabled: pick<boolean>(d, ["olxPay", "olx_pay", "olxPayEnabled"]) ?? null,
     olx_delivery_enabled: pick<boolean>(d, ["olxDelivery", "olx_delivery", "olxDeliveryEnabled"]) ?? null,
     request_id: gecko?.requestId ?? null,
@@ -332,8 +338,8 @@ Deno.serve(async (req) => {
     if (Array.isArray(body?.urls)) urls.push(...body.urls.filter((x: any) => typeof x === "string"));
     urls = Array.from(new Set(urls.map((u: string) => u.trim()).filter(Boolean)));
     if (urls.length === 0) return json({ error: "Nenhuma URL enviada" }, 400);
-    const invalid = urls.filter((u) => !isValidOlxUrl(u));
-    if (invalid.length > 0) return json({ error: "URLs inválidas. Apenas olx.com.br é permitido.", invalid }, 400);
+    const invalid = urls.filter((u) => detectPortal(u) === null);
+    if (invalid.length > 0) return json({ error: "URLs inválidas. Apenas olx.com.br e zapimoveis.com.br são suportados.", invalid }, 400);
 
     const { data: jobIns, error: jobErr } = await userClient
       .from("olx_import_jobs")
@@ -346,10 +352,11 @@ Deno.serve(async (req) => {
     const importedListingIds: Record<string, string> = {};
 
     for (const url of urls) {
+      const portal = detectPortal(url)!;
       try {
         const pdp = await callGecko(
-          { target: "olx.com.br", type: "pdp", url },
-          { apiKey: GECKO_API_KEY, label: "pdp-import" },
+          geckoPayloadFor(portal, url),
+          { apiKey: GECKO_API_KEY, label: `pdp-import-${portal}` },
         );
 
         if (!pdp.ok) {
@@ -371,7 +378,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const mapped = await mapListing(user_id, url, gecko);
+        const mapped = await mapListing(user_id, url, gecko, portal);
 
         // Extração de fotos: campos oficiais + varredura profunda; tenta 1x mais se vier pouco.
         let imageDiagnostics = extractPdpImageDiagnostics(gecko);
@@ -380,8 +387,8 @@ Deno.serve(async (req) => {
         let plpFallback: Awaited<ReturnType<typeof fetchPlpFallbackImages>> | null = null;
         if (imageUrls.length < 3) {
           const retry = await callGecko(
-            { target: "olx.com.br", type: "pdp", url },
-            { apiKey: GECKO_API_KEY, label: "pdp-import-retry", retries: 1 },
+            geckoPayloadFor(portal, url),
+            { apiKey: GECKO_API_KEY, label: `pdp-import-retry-${portal}`, retries: 1 },
           );
           if (retry.ok) {
             const retryDiagnostics = extractPdpImageDiagnostics(retry.body);
@@ -393,7 +400,8 @@ Deno.serve(async (req) => {
           }
         }
 
-        if (imageUrls.length === 0) {
+        // Fallback PLP só existe para OLX; ZAP fica só com PDP.
+        if (imageUrls.length === 0 && portal === "olx") {
           plpFallback = await fetchPlpFallbackImages(url, GECKO_API_KEY, getListingRoot(gecko), mapped.title);
           if (plpFallback.urls.length > 0) {
             imageUrls = plpFallback.urls;

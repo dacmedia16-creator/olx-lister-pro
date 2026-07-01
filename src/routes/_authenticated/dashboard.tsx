@@ -11,24 +11,26 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
 });
 
-type Stats = { listings: number; images: number };
-type Listing = { id: string; title: string | null; price: number | null; city: string | null; created_at: string };
+type Stats = { listings: number; images: number; olx: number; zap: number };
+type Listing = { id: string; title: string | null; price: number | null; city: string | null; created_at: string; source_portal: string | null };
 type LogRow = { id: string; message: string | null; created_at: string; status: string };
 
 function Dashboard() {
-  const [stats, setStats] = useState<Stats>({ listings: 0, images: 0 });
+  const [stats, setStats] = useState<Stats>({ listings: 0, images: 0, olx: 0, zap: 0 });
   const [recent, setRecent] = useState<Listing[]>([]);
   const [errors, setErrors] = useState<LogRow[]>([]);
 
   useEffect(() => {
     (async () => {
-      const [{ count: lc }, { count: ic }, { data: r }, { data: er }] = await Promise.all([
+      const [{ count: lc }, { count: ic }, { count: olxC }, { count: zapC }, { data: r }, { data: er }] = await Promise.all([
         supabase.from("olx_listings").select("id", { count: "exact", head: true }),
         supabase.from("listing_images").select("id", { count: "exact", head: true }).eq("status", "downloaded"),
-        supabase.from("olx_listings").select("id,title,price,city,created_at").order("created_at", { ascending: false }).limit(5),
+        supabase.from("olx_listings").select("id", { count: "exact", head: true }).eq("source_portal", "olx"),
+        supabase.from("olx_listings").select("id", { count: "exact", head: true }).eq("source_portal", "zap"),
+        supabase.from("olx_listings").select("id,title,price,city,created_at,source_portal").order("created_at", { ascending: false }).limit(5),
         supabase.from("processing_logs").select("id,message,created_at,status").eq("status", "error").order("created_at", { ascending: false }).limit(5),
       ]);
-      setStats({ listings: lc ?? 0, images: ic ?? 0 });
+      setStats({ listings: lc ?? 0, images: ic ?? 0, olx: olxC ?? 0, zap: zapC ?? 0 });
       setRecent((r as Listing[]) ?? []);
       setErrors((er as LogRow[]) ?? []);
     })();
@@ -39,14 +41,22 @@ function Dashboard() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
         <Button asChild>
-          <Link to="/import">Importar anúncios OLX</Link>
+          <Link to="/import">Importar anúncios (OLX / ZAP)</Link>
         </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
-          <CardHeader><CardTitle className="text-sm text-muted-foreground">Anúncios importados</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm text-muted-foreground">Total importados</CardTitle></CardHeader>
           <CardContent><div className="text-4xl font-semibold">{stats.listings}</div></CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-sm text-muted-foreground">OLX</CardTitle></CardHeader>
+          <CardContent><div className="text-4xl font-semibold">{stats.olx}</div></CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-sm text-muted-foreground">ZAP Imóveis</CardTitle></CardHeader>
+          <CardContent><div className="text-4xl font-semibold">{stats.zap}</div></CardContent>
         </Card>
         <Card>
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Imagens baixadas</CardTitle></CardHeader>
@@ -64,6 +74,9 @@ function Dashboard() {
               {recent.map((l) => (
                 <li key={l.id} className="flex items-center justify-between py-2">
                   <Link to="/listings/$id" params={{ id: l.id }} className="flex-1 truncate text-sm hover:underline">
+                    <span className={`mr-2 rounded px-1.5 py-0.5 text-[10px] font-semibold text-white ${l.source_portal === "zap" ? "bg-blue-600" : "bg-purple-600"}`}>
+                      {l.source_portal === "zap" ? "ZAP" : "OLX"}
+                    </span>
                     {l.title ?? "(sem título)"}
                   </Link>
                   <div className="ml-3 flex items-center gap-3 text-sm text-muted-foreground">
