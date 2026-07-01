@@ -179,7 +179,10 @@ export function extractPdpImageDiagnostics(gecko: any): { urls: string[]; fieldI
     fields.push(r.images, r.photos, r.media, r.gallery, r.thumbnails, r.thumbnail, r.image, r.mainImage, r.cover);
   }
   const fieldImages = collect(fields);
-  const deepImages = mergeUrls(...roots.map((r) => collectDeepImageUrls(r)));
+  // Only run the deep scan when official fields returned nothing; otherwise trust the PDP.
+  const deepImages = fieldImages.length === 0
+    ? mergeUrls(...roots.map((r) => collectDeepImageUrls(r)))
+    : [];
   return { urls: mergeUrls(fieldImages, deepImages), fieldImages, deepImages };
 }
 
