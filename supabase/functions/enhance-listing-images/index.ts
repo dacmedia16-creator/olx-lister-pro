@@ -58,16 +58,25 @@ async function callOpenAiImageEdit(imageBytes: Uint8Array, promptText: string): 
   form.append("n", "1");
   form.append("image", new Blob([imageBytes], { type: "image/png" }), "input.png");
 
-  const r = await fetch("https://ai.gateway.lovable.dev/v1/images/edits", {
+  const r = await fetch("https://api.openai.com/v1/images/edits", {
     method: "POST",
-    headers: { "Authorization": `Bearer ${LOVABLE_API_KEY}` },
+    headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` },
     body: form,
   });
   if (!r.ok) {
     const text = await r.text().catch(() => "");
-    if (r.status === 429) throw new Error("Limite de requisições atingido (429). Tente novamente em instantes.");
-    if (r.status === 402) throw new Error("Créditos de IA esgotados (402). Adicione créditos no workspace.");
-    throw new Error(`Gateway error ${r.status}: ${text.slice(0, 400)}`);
+    if (r.status === 401) throw new Error("Chave OpenAI inválida (401). Verifique a OPENAI_API_KEY.");
+    if (r.status === 403) {
+      if (/verified|verification/i.test(text)) {
+        throw new Error("Sua organização OpenAI precisa ser verificada para usar gpt-image-1. Vá em platform.openai.com/settings/organization/general e clique em Verify.");
+      }
+      throw new Error(`OpenAI 403: ${text.slice(0, 400)}`);
+    }
+    if (r.status === 429) throw new Error("Limite de requisições OpenAI atingido (429). Tente em instantes.");
+    if (r.status === 400 && /billing|quota|hard_limit/i.test(text)) {
+      throw new Error("Sem créditos na conta OpenAI. Adicione saldo em platform.openai.com/settings/organization/billing.");
+    }
+    throw new Error(`OpenAI error ${r.status}: ${text.slice(0, 400)}`);
   }
   const json = await r.json();
   const b64 = json?.data?.[0]?.b64_json;
