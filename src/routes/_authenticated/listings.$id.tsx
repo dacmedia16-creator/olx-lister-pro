@@ -421,11 +421,20 @@ function ListingDetail() {
                             onClick={() => enhanceOne(im.id)}
                             disabled={enhancing}
                             title={isEnhanced ? "Retratar com IA" : "Tratar com IA"}
-                            className="absolute right-1 top-1 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            className="absolute right-8 top-1 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             <Sparkles className="h-3 w-3" /> {isEnhanced ? "Retratar" : "Tratar"}
                           </button>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => removeImage(im.id)}
+                          disabled={deletingImageIds.has(im.id)}
+                          title="Excluir foto"
+                          className="absolute right-1 top-1 flex items-center justify-center rounded bg-destructive/90 p-1 text-destructive-foreground opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
                         {isEnhanced && (
                           <button
                             type="button"
