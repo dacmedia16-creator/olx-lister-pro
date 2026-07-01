@@ -32,7 +32,10 @@ function mapGeckoStatusMessage(status: number): string {
   return `Erro HTTP ${status}`;
 }
 
+// Schema oficial da GeckoAPI PLP: itens em gecko.data.items[] (um nível de wrapper).
+// Fallback para gecko.data.data quando outros parsers adicionarem wrapper extra.
 function getPlpRoot(gecko: any): any {
+  if (gecko?.data?.items && Array.isArray(gecko.data.items)) return gecko.data;
   if (gecko?.data?.data && typeof gecko.data.data === "object") return gecko.data.data;
   if (gecko?.data && typeof gecko.data === "object") return gecko.data;
   return gecko ?? {};
