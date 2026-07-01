@@ -36,18 +36,25 @@ function AuthenticatedLayout() {
                 Dashboard
               </Link>
               <Link
+                to="/search"
+                className="text-sm text-muted-foreground hover:text-foreground"
+                activeProps={{ className: "text-sm text-foreground font-medium" }}
+              >
+                Buscar anúncios
+              </Link>
+              <Link
                 to="/import"
                 className="text-sm text-muted-foreground hover:text-foreground"
                 activeProps={{ className: "text-sm text-foreground font-medium" }}
               >
-                Importar
+                Importar por link
               </Link>
               <Link
                 to="/listings"
                 className="text-sm text-muted-foreground hover:text-foreground"
                 activeProps={{ className: "text-sm text-foreground font-medium" }}
               >
-                Anúncios
+                Anúncios importados
               </Link>
             </nav>
           </div>
