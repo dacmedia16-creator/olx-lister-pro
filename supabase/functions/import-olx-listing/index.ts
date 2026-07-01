@@ -378,7 +378,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const mapped = await mapListing(user_id, url, gecko);
+        const mapped = await mapListing(user_id, url, gecko, portal);
 
         // Extração de fotos: campos oficiais + varredura profunda; tenta 1x mais se vier pouco.
         let imageDiagnostics = extractPdpImageDiagnostics(gecko);
@@ -387,8 +387,8 @@ Deno.serve(async (req) => {
         let plpFallback: Awaited<ReturnType<typeof fetchPlpFallbackImages>> | null = null;
         if (imageUrls.length < 3) {
           const retry = await callGecko(
-            { target: "olx.com.br", type: "pdp", url },
-            { apiKey: GECKO_API_KEY, label: "pdp-import-retry", retries: 1 },
+            geckoPayloadFor(portal, url),
+            { apiKey: GECKO_API_KEY, label: `pdp-import-retry-${portal}`, retries: 1 },
           );
           if (retry.ok) {
             const retryDiagnostics = extractPdpImageDiagnostics(retry.body);
@@ -400,7 +400,8 @@ Deno.serve(async (req) => {
           }
         }
 
-        if (imageUrls.length === 0) {
+        // Fallback PLP só existe para OLX; ZAP fica só com PDP.
+        if (imageUrls.length === 0 && portal === "olx") {
           plpFallback = await fetchPlpFallbackImages(url, GECKO_API_KEY, getListingRoot(gecko), mapped.title);
           if (plpFallback.urls.length > 0) {
             imageUrls = plpFallback.urls;
