@@ -292,7 +292,12 @@ function ListingDetail() {
               )}
               <Button size="sm" onClick={enhance} disabled={enhancing}>
                 <Sparkles className={`mr-2 h-4 w-4 ${enhancing ? "animate-pulse" : ""}`} />
-                {enhancing ? "Tratando..." : hasAnyEnhanced ? "Retratar com IA" : "Tratar fotos com IA"}
+                {enhancing
+                  ? enhanceProgress
+                    ? `Tratando ${enhanceProgress.done}/${enhanceProgress.total}...`
+                    : "Tratando..."
+                  : hasAnyEnhanced ? "Retratar com IA" : "Tratar fotos com IA"}
+
               </Button>
               {hasAnyEnhanced && (
                 <Button size="sm" variant="secondary" onClick={downloadAll} disabled={downloadingZip}>
