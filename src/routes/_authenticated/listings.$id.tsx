@@ -232,8 +232,9 @@ function ListingDetail() {
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [confirmMode, setConfirmMode] = useState<"enhance" | "watermark_only">("enhance");
 
-  const openEnhanceConfirm = useCallback(async () => {
+  const openEnhanceConfirm = useCallback(async (mode: "enhance" | "watermark_only" = "enhance") => {
     const { data: allImgs, error } = await supabase
       .from("listing_images")
       .select("id,original_external_url")
@@ -244,9 +245,10 @@ function ListingDetail() {
     }
     const count = (allImgs ?? []).filter((i: any) => i.original_external_url).length;
     if (count === 0) {
-      toast.error("Nenhuma foto disponível para tratar");
+      toast.error("Nenhuma foto disponível para processar");
       return;
     }
+    setConfirmMode(mode);
     setPendingCount(count);
     setConfirmOpen(true);
   }, [id]);
