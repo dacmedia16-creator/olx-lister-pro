@@ -31,25 +31,10 @@ async function fetchBytes(url: string): Promise<Uint8Array | null> {
   } catch { return null; }
 }
 
-// Fallback: encaixa foto em canvas horizontal 3:2 caso o modelo devolva com aspect errado.
-async function toHorizontalCanvas(bytes: Uint8Array): Promise<Uint8Array> {
-  const src = await decodeImage(bytes) as Image;
-  const srcW = src.width, srcH = src.height;
-  const targetRatio = TARGET_W / TARGET_H;
-  const srcRatio = srcW / srcH;
-  let drawW: number, drawH: number;
-  if (srcRatio > targetRatio) { drawW = TARGET_W; drawH = Math.round(TARGET_W / srcRatio); }
-  else { drawH = TARGET_H; drawW = Math.round(TARGET_H * srcRatio); }
-  const resized = src.clone().resize(drawW, drawH);
-  const canvas = new Image(TARGET_W, TARGET_H);
-  const bg = src.clone().resize(TARGET_W, TARGET_H);
-  try { (bg as any).blur(20); } catch { /* noop */ }
-  canvas.composite(bg, 0, 0);
-  const offX = Math.floor((TARGET_W - drawW) / 2);
-  const offY = Math.floor((TARGET_H - drawH) / 2);
-  canvas.composite(resized, offX, offY);
-  return await canvas.encode();
-}
+// Fallback removido — dependia de imagescript. Se a OpenAI devolver aspect fora do 3:2,
+// aceitamos a imagem como veio e marcamos was_corrected=false para auditoria.
+
+
 
 async function callOpenAiImageEdit(imageBytes: Uint8Array, promptText: string): Promise<Uint8Array> {
   const form = new FormData();
