@@ -2,7 +2,7 @@
 // Chama a GeckoAPI PDP para uma URL da OLX e persiste anúncio + URLs de fotos (sem baixar pro storage).
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { callGecko, extractPdpImages, mapGeckoStatusMessage } from "../_shared/gecko.ts";
+import { callGecko, extractPdpImageDiagnostics, extractPlpImages, isLikelyImageUrl, mapGeckoStatusMessage } from "../_shared/gecko.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -34,6 +34,92 @@ function pick<T = any>(obj: any, keys: string[]): T | undefined {
     if (ok && cur !== undefined && cur !== null) return cur as T;
   }
   return undefined;
+}
+
+function getPlpRoot(gecko: any): any {
+  if (gecko?.data?.items && Array.isArray(gecko.data.items)) return gecko.data;
+  if (gecko?.data?.data && typeof gecko.data.data === "object") return gecko.data.data;
+  if (gecko?.data && typeof gecko.data === "object") return gecko.data;
+  return gecko ?? {};
+}
+
+function extractAds(gecko: any): any[] {
+  const root = getPlpRoot(gecko);
+  for (const c of [root?.items, root?.ads, root?.listings, root?.results, gecko?.ads]) {
+    if (Array.isArray(c) && c.length) return c;
+  }
+  return [];
+}
+
+function getAdUrl(ad: any): string {
+  return String(ad?.url ?? ad?.link ?? ad?.href ?? "");
+}
+
+function getAdId(ad: any): string | null {
+  const id = ad?.listingId ?? ad?.listing_id ?? ad?.adId ?? ad?.ad_id ?? ad?.id;
+  return id == null ? null : String(id);
+}
+
+function normalizeOlxUrlForMatch(raw: string | null | undefined): string {
+  if (!raw) return "";
+  try {
+    const u = new URL(raw);
+    u.search = "";
+    u.hash = "";
+    return u.toString().replace(/\/$/, "");
+  } catch {
+    return String(raw).split("?")[0].replace(/\/$/, "");
+  }
+}
+
+function derivePlpFallbackUrl(sourceUrl: string, listingRoot?: any): string | null {
+  const attrs = Array.isArray(listingRoot?.attributes) ? listingRoot.attributes : [];
+  const attrUrl = attrs
+    .map((a: any) => typeof a?.url === "string" ? a.url : null)
+    .find((u: string | null) => u && /olx\.com\.br\/imoveis/i.test(u) && !/\d{8,}/.test(u));
+  if (attrUrl) return attrUrl;
+
+  try {
+    const u = new URL(sourceUrl);
+    const parts = u.pathname.split("/").filter(Boolean);
+    if (parts.length < 2) return null;
+    const last = parts[parts.length - 1] ?? "";
+    const looksLikeListingSlug = /\d{8,}/.test(last) || last.includes("-");
+    const plpParts = looksLikeListingSlug ? parts.slice(0, -1) : parts;
+    if (plpParts.length === 0) return null;
+    return `${u.origin}/${plpParts.join("/")}`;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchPlpFallbackImages(url: string, listingId: string | null, apiKey: string, listingRoot?: any) {
+  const plpUrl = derivePlpFallbackUrl(url, listingRoot);
+  if (!plpUrl) return { urls: [] as string[], plpUrl: null as string | null, itemCount: 0, matched: false, requestId: null as string | null };
+
+  const r = await callGecko(
+    { target: "olx.com.br", type: "plp", url: plpUrl },
+    { apiKey, label: "plp-image-fallback", retries: 0, timeoutMs: 18000 },
+  );
+  if (!r.ok || r.body?.notFound === true) {
+    return { urls: [] as string[], plpUrl, itemCount: 0, matched: false, requestId: r.requestId ?? null };
+  }
+
+  const ads = extractAds(r.body);
+  const sourceMatch = normalizeOlxUrlForMatch(url);
+  const matched = ads.find((ad) => {
+    const adId = getAdId(ad);
+    const adUrl = normalizeOlxUrlForMatch(getAdUrl(ad));
+    return (listingId && adId === listingId) || (adUrl && sourceMatch && (adUrl === sourceMatch || sourceMatch.includes(adUrl) || adUrl.includes(sourceMatch)));
+  });
+  const target = matched ?? ads[0];
+  return {
+    urls: target ? extractPlpImages(target) : [],
+    plpUrl,
+    itemCount: ads.length,
+    matched: Boolean(matched),
+    requestId: r.requestId ?? r.body?.requestId ?? null,
+  };
 }
 
 async function mapListing(user_id: string, source_url: string, gecko: any) {
@@ -150,18 +236,35 @@ Deno.serve(async (req) => {
 
         const mapped = await mapListing(user_id, url, gecko);
 
-        // Extração de fotos: tenta 1x mais se vier pouco
-        let imageUrls = extractPdpImages(gecko);
+        // Extração de fotos: campos oficiais + varredura profunda; tenta 1x mais se vier pouco.
+        let imageDiagnostics = extractPdpImageDiagnostics(gecko);
+        let imageUrls = imageDiagnostics.urls;
+        let imageSource = imageUrls.length > 0 ? "pdp" : "none";
+        let plpFallback: Awaited<ReturnType<typeof fetchPlpFallbackImages>> | null = null;
         if (imageUrls.length < 3) {
           const retry = await callGecko(
             { target: "olx.com.br", type: "pdp", url },
             { apiKey: GECKO_API_KEY, label: "pdp-import-retry", retries: 1 },
           );
           if (retry.ok) {
-            const retryImgs = extractPdpImages(retry.body);
-            if (retryImgs.length > imageUrls.length) imageUrls = retryImgs;
+            const retryDiagnostics = extractPdpImageDiagnostics(retry.body);
+            if (retryDiagnostics.urls.length > imageUrls.length) {
+              imageDiagnostics = retryDiagnostics;
+              imageUrls = retryDiagnostics.urls;
+              imageSource = "pdp_retry";
+            }
           }
         }
+
+        if (imageUrls.length === 0) {
+          plpFallback = await fetchPlpFallbackImages(url, mapped.listing_id, GECKO_API_KEY, getListingRoot(gecko));
+          if (plpFallback.urls.length > 0) {
+            imageUrls = plpFallback.urls;
+            imageSource = "plp_fallback";
+          }
+        }
+        imageUrls = imageUrls.filter(isLikelyImageUrl);
+        if (imageUrls.length === 0) imageSource = "none";
 
         // Diagnóstico da resposta PDP (primeira execução por URL)
         const listingRoot = getListingRoot(gecko);
@@ -170,6 +273,19 @@ Deno.serve(async (req) => {
           message: `PDP diagnóstico: ${imageUrls.length} foto(s)`,
           metadata_json: {
             url, request_id: gecko?.requestId,
+            image_source: imageSource,
+            image_counts: {
+              total: imageUrls.length,
+              pdp_fields: imageDiagnostics.fieldImages.length,
+              pdp_deep_scan: imageDiagnostics.deepImages.length,
+              plp_fallback: plpFallback?.urls.length ?? 0,
+            },
+            plp_fallback: plpFallback ? {
+              url: plpFallback.plpUrl,
+              item_count: plpFallback.itemCount,
+              matched_listing: plpFallback.matched,
+              request_id: plpFallback.requestId,
+            } : null,
             image_fields: {
               images: Array.isArray(listingRoot?.images) ? listingRoot.images.slice(0, 3) : listingRoot?.images ?? null,
               photos: Array.isArray(listingRoot?.photos) ? listingRoot.photos.slice(0, 3) : listingRoot?.photos ?? null,
@@ -207,14 +323,14 @@ Deno.serve(async (req) => {
           await userClient.from("processing_logs").insert({
             user_id, job_id: jobId, listing_id: listingRow.id,
             type: "image", status: "warning",
-            message: "GeckoAPI devolveu 0 imagens; imagens anteriores preservadas",
-            metadata_json: { url },
+            message: "GeckoAPI retornou 0 imagens em PDP e fallback PLP; imagens anteriores preservadas",
+            metadata_json: { url, image_source: imageSource, plp_fallback: plpFallback },
           });
         } else {
           await userClient.from("listing_images").delete().eq("listing_id", listingRow.id);
           const rows = imageUrls.map((u, i) => ({
             user_id, listing_id: listingRow.id,
-            original_external_url: u, status: "ready", position: i,
+            original_external_url: u, status: "downloaded", position: i,
           }));
           const { error: insErr } = await userClient.from("listing_images").insert(rows);
           if (insErr) {
@@ -230,7 +346,7 @@ Deno.serve(async (req) => {
         await userClient.from("processing_logs").insert({
           user_id, job_id: jobId, listing_id: listingRow.id,
           type: "listing", status: "success",
-          message: "Anúncio importado", metadata_json: { url, images: imageUrls.length },
+          message: "Anúncio importado", metadata_json: { url, images: imageUrls.length, image_source: imageSource },
         });
       } catch (e: any) {
         failed++;
