@@ -213,10 +213,10 @@ Deno.serve(async (req) => {
       await admin.from("processing_logs").insert({
         user_id: userId,
         listing_id: listingId,
-        type: "enhance_images",
+        type: mode === "watermark_only" ? "remove_watermark" : "enhance_images",
         status: "done",
-        message: `enhance-listing-images (${MODEL}): ${results.filter(r => r.ok).length}/${results.length} sucesso`,
-        metadata_json: { model: MODEL, results },
+        message: `enhance-listing-images (${MODEL}, mode=${mode}): ${results.filter(r => r.ok).length}/${results.length} sucesso`,
+        metadata_json: { model: MODEL, mode, results },
       });
     } catch { /* noop */ }
 
