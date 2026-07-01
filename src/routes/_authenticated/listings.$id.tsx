@@ -21,6 +21,7 @@ import { formatBRL, formatDate } from "@/lib/olx";
 import { HashBadge } from "@/components/HashBadge";
 import { OlxImageCarousel } from "@/components/OlxImageCarousel";
 import { deleteListing } from "@/lib/delete-listing";
+import { deleteListingImage } from "@/lib/delete-listing-image";
 import { downloadEnhanced, downloadEnhancedZip, getEnhancedSignedUrl } from "@/lib/enhanced-images";
 
 export const Route = createFileRoute("/_authenticated/listings/$id")({
@@ -161,6 +162,21 @@ function ListingDetail() {
       setEnhancingIds((prev) => { const n = new Set(prev); n.delete(imageId); return n; });
     }
   }, [id, load]);
+
+  const [deletingImageIds, setDeletingImageIds] = useState<Set<string>>(new Set());
+  const removeImage = useCallback(async (imageId: string) => {
+    if (!window.confirm("Excluir esta foto? Esta ação não pode ser desfeita.")) return;
+    setDeletingImageIds((prev) => { const n = new Set(prev); n.add(imageId); return n; });
+    try {
+      await deleteListingImage(imageId);
+      await load();
+      toast.success("Foto excluída");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao excluir foto");
+    } finally {
+      setDeletingImageIds((prev) => { const n = new Set(prev); n.delete(imageId); return n; });
+    }
+  }, [load]);
 
   const enhance = useCallback(async () => {
     setEnhancing(true);
@@ -405,11 +421,20 @@ function ListingDetail() {
                             onClick={() => enhanceOne(im.id)}
                             disabled={enhancing}
                             title={isEnhanced ? "Retratar com IA" : "Tratar com IA"}
-                            className="absolute right-1 top-1 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            className="absolute right-8 top-1 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             <Sparkles className="h-3 w-3" /> {isEnhanced ? "Retratar" : "Tratar"}
                           </button>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => removeImage(im.id)}
+                          disabled={deletingImageIds.has(im.id)}
+                          title="Excluir foto"
+                          className="absolute right-1 top-1 flex items-center justify-center rounded bg-destructive/90 p-1 text-destructive-foreground opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
                         {isEnhanced && (
                           <button
                             type="button"
