@@ -121,31 +121,59 @@ function ListingsPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {rows.map((l) => (
-            <Link key={l.id} to="/listings/$id" params={{ id: l.id }} className="block">
-              <Card className="h-full overflow-hidden transition-shadow hover:shadow-md">
-                <div className="relative aspect-video w-full overflow-hidden bg-muted">
-                  {thumbs[l.id] ? (
-                    <img src={thumbs[l.id]} alt={l.title ?? ""} referrerPolicy="no-referrer" className="h-full w-full object-cover" loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
-                  ) : (
-                    <>
-                      <div className="flex h-full items-center justify-center text-xs text-muted-foreground">sem imagem</div>
-                      <span className="absolute right-2 top-2 rounded bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground backdrop-blur">
-                        Sem fotos
-                      </span>
-                    </>
-                  )}
-                </div>
-                <CardContent className="space-y-1 py-3">
-                  <div className="line-clamp-2 text-sm font-medium">{l.title ?? "(sem título)"}</div>
-                  <div className="text-base font-semibold">{formatBRL(l.price)}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {[l.neighborhood, l.city].filter(Boolean).join(" · ") || "—"}
+            <div key={l.id} className="relative">
+              <Link to="/listings/$id" params={{ id: l.id }} className="block">
+                <Card className="h-full overflow-hidden transition-shadow hover:shadow-md">
+                  <div className="relative aspect-video w-full overflow-hidden bg-muted">
+                    {thumbs[l.id] ? (
+                      <img src={thumbs[l.id]} alt={l.title ?? ""} referrerPolicy="no-referrer" className="h-full w-full object-cover" loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                    ) : (
+                      <>
+                        <div className="flex h-full items-center justify-center text-xs text-muted-foreground">sem imagem</div>
+                        <span className="absolute right-2 top-2 rounded bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground backdrop-blur">
+                          Sem fotos
+                        </span>
+                      </>
+                    )}
                   </div>
-                  <div className="text-xs text-muted-foreground">{l.category ?? "—"}</div>
-                  <div className="text-xs text-muted-foreground">Publicado: {formatDate(l.listed_at ?? l.created_at)}</div>
-                </CardContent>
-              </Card>
-            </Link>
+                  <CardContent className="space-y-1 py-3">
+                    <div className="line-clamp-2 text-sm font-medium">{l.title ?? "(sem título)"}</div>
+                    <div className="text-base font-semibold">{formatBRL(l.price)}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {[l.neighborhood, l.city].filter(Boolean).join(" · ") || "—"}
+                    </div>
+                    <div className="text-xs text-muted-foreground">{l.category ?? "—"}</div>
+                    <div className="text-xs text-muted-foreground">Publicado: {formatDate(l.listed_at ?? l.created_at)}</div>
+                  </CardContent>
+                </Card>
+              </Link>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="destructive"
+                    className="absolute right-2 top-2 h-8 w-8 shadow"
+                    disabled={deletingId === l.id}
+                    aria-label="Excluir anúncio"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Excluir este anúncio?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Esta ação não pode ser desfeita. As imagens armazenadas também serão removidas.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => handleDelete(l.id)}>Excluir</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           ))}
         </div>
       )}
