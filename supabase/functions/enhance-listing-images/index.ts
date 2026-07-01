@@ -243,10 +243,11 @@ Deno.serve(async (req) => {
       });
     } catch { /* noop */ }
 
-    return new Response(JSON.stringify({ results }), {
+    return new Response(JSON.stringify({ results, remaining_ids }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return new Response(JSON.stringify({ error: msg }), {
