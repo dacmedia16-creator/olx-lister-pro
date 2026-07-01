@@ -1,5 +1,5 @@
 // Edge Function: enhance-listing-images
-// Melhora as fotos de um anúncio via Lovable AI Gateway (OpenAI gpt-image-2 edits)
+// Melhora as fotos de um anúncio via OpenAI API própria (gpt-image-1 edits)
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { decode as decodeImage, Image } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
@@ -12,11 +12,11 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const BUCKET = "olx-images";
-const PROMPT = "Melhore esta foto de imóvel e entregue no formato HORIZONTAL (paisagem, proporção aproximada 3:2). Se a foto original for vertical, faça outpainting realista estendendo naturalmente parede, piso, teto e iluminação para preencher todo o quadro horizontal. REGRAS: (1) NUNCA deixe faixas brancas, cinzas ou bordas nas laterais; (2) a imagem inteira deve parecer UMA FOTO ÚNICA e nítida; (3) NÃO invente móveis novos, NÃO mude cores, estilo ou iluminação do ambiente original; (4) apenas melhore nitidez e exposição e complete as laterais de forma coerente com o mesmo cômodo.";
+const PROMPT = "Melhore a nitidez, iluminação, exposição e cores desta foto de imóvel. NÃO altere o ambiente, móveis, layout, cores das paredes, piso ou qualquer elemento da cena original — preserve 100% do conteúdo. Entregue no formato HORIZONTAL (paisagem 3:2). Se a foto original for vertical, faça outpainting realista estendendo naturalmente parede, piso, teto e iluminação para preencher as laterais do quadro. NUNCA deixe faixas brancas, cinzas ou bordas — a imagem inteira deve parecer UMA FOTO ÚNICA e coerente.";
 const RETRY_PROMPT = PROMPT + " ATENÇÃO: a tentativa anterior deixou faixas brancas nas laterais — desta vez REMOVA COMPLETAMENTE qualquer área branca e substitua por continuação realista da parede/piso/teto.";
-const MODEL = "openai/gpt-image-2";
+const MODEL = "gpt-image-1";
 const IMAGE_SIZE = "1536x1024"; // horizontal 3:2
 const TARGET_W = 1536;
 const TARGET_H = 1024;
