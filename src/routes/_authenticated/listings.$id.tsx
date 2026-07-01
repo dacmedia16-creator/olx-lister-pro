@@ -26,7 +26,7 @@ import { downloadEnhanced, downloadEnhancedZip, getEnhancedSignedUrl } from "@/l
 
 // Custo aproximado por imagem: OpenAI gpt-image-1, quality=high, size=1536x1024.
 // Referência: tabela pública OpenAI (~US$ 0,19/imagem em high nessa resolução).
-const COST_PER_IMAGE_USD = 0.19;
+const COST_PER_IMAGE_USD = 0.02;
 
 export const Route = createFileRoute("/_authenticated/listings/$id")({
   head: () => ({ meta: [{ title: "Detalhes do anúncio" }] }),
@@ -590,6 +590,9 @@ function ListingDetail() {
                   <span className="text-muted-foreground">
                     (~US$ {COST_PER_IMAGE_USD.toFixed(2)} por foto)
                   </span>
+                </div>
+                <div className="text-muted-foreground">
+                  Modo econômico ativo (qualidade baixa, ~US$ 0,02/foto). O resultado pode ter menos nitidez que no modo alto.
                 </div>
                 <div className="text-muted-foreground">
                   Retratar sobrescreve as fotos já tratadas e gera novo custo.
