@@ -1,14 +1,26 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { ExternalLink, ImageOff, RefreshCw } from "lucide-react";
+import { ExternalLink, ImageOff, RefreshCw, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { formatBRL, formatDate } from "@/lib/olx";
 import { HashBadge } from "@/components/HashBadge";
 import { OlxImageCarousel } from "@/components/OlxImageCarousel";
+import { deleteListing } from "@/lib/delete-listing";
 
 export const Route = createFileRoute("/_authenticated/listings/$id")({
   head: () => ({ meta: [{ title: "Detalhes do anúncio" }] }),
@@ -47,9 +59,11 @@ type Image = { id: string; original_external_url: string | null; original_storag
 
 function ListingDetail() {
   const { id } = Route.useParams();
+  const navigate = useNavigate();
   const [listing, setListing] = useState<Listing | null>(null);
   const [images, setImages] = useState<Image[]>([]);
   const [reimporting, setReimporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("olx_listings").select("*").eq("id", id).maybeSingle();
@@ -104,10 +118,42 @@ function ListingDetail() {
 
   const hasImages = images.length > 0;
 
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteListing(id);
+      toast.success("Anúncio excluído");
+      navigate({ to: "/listings" });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao excluir");
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex items-center justify-between">
         <Link to="/listings" className="text-sm text-muted-foreground hover:underline">← Voltar</Link>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="destructive" size="sm" disabled={deleting}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              {deleting ? "Excluindo..." : "Excluir anúncio"}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir este anúncio?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta ação não pode ser desfeita. As imagens armazenadas também serão removidas.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDelete}>Excluir</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
