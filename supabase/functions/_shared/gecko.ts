@@ -11,6 +11,7 @@ export function normalizeUrl(raw: unknown): string | null {
   if (u.startsWith("//")) u = "https:" + u;
   else if (u.startsWith("http://")) u = "https://" + u.slice(7);
   if (!/^https:\/\//i.test(u)) return null;
+  u = u.replace(/\\u002F/g, "/").replace(/&amp;/g, "&");
   return u;
 }
 
@@ -59,6 +60,82 @@ function collect(fields: any[]): string[] {
   return out.slice(0, 10);
 }
 
+const IMAGE_EXT_RE = /https?:\/\/[^\s"'<>\\]+?\.(?:jpe?g|png|webp)(?:\?[^\s"'<>\\]*)?/gi;
+const IMAGE_HOST_HINT_RE = /(img|image|photo|media|cdn|olx|cloudfront|akamai|static)/i;
+
+function looksLikeImageUrl(raw: string): boolean {
+  return /\.(?:jpe?g|png|webp)(?:\?|$)/i.test(raw) || IMAGE_HOST_HINT_RE.test(raw);
+}
+
+function collectDeepImageUrls(root: any, maxDepth = 7): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const visited = new WeakSet<object>();
+
+  function add(raw: unknown) {
+    if (typeof raw !== "string") return;
+    const direct = normalizeUrl(raw);
+    if (direct && looksLikeImageUrl(direct) && !seen.has(direct)) {
+      seen.add(direct);
+      out.push(direct);
+    }
+
+    const decoded = raw.replace(/\\u002F/g, "/").replace(/\\\//g, "/");
+    const matches = decoded.match(IMAGE_EXT_RE) ?? [];
+    for (const match of matches) {
+      const n = normalizeUrl(match);
+      if (n && !seen.has(n)) {
+        seen.add(n);
+        out.push(n);
+      }
+    }
+  }
+
+  function walk(value: any, depth: number) {
+    if (out.length >= 20 || value == null || depth > maxDepth) return;
+    if (typeof value === "string") {
+      add(value);
+      return;
+    }
+    if (typeof value !== "object") return;
+    if (visited.has(value)) return;
+    visited.add(value);
+
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, depth + 1);
+      return;
+    }
+
+    for (const [key, child] of Object.entries(value)) {
+      const keyLooksImage = /image|img|photo|picture|media|gallery|thumbnail|cover|url|src|href/i.test(key);
+      if (typeof child === "string") {
+        if (keyLooksImage || looksLikeImageUrl(child)) add(child);
+      } else {
+        walk(child, depth + 1);
+      }
+      if (out.length >= 20) return;
+    }
+  }
+
+  walk(root, 0);
+  return out.slice(0, 10);
+}
+
+function mergeUrls(...groups: string[][]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const group of groups) {
+    for (const u of group) {
+      const n = normalizeUrl(u);
+      if (n && !seen.has(n)) {
+        seen.add(n);
+        out.push(n);
+      }
+    }
+  }
+  return out.slice(0, 10);
+}
+
 export function extractPlpImages(item: any): string[] {
   if (!item || typeof item !== "object") return [];
   return collect([
@@ -74,6 +151,10 @@ export function extractPlpImages(item: any): string[] {
 }
 
 export function extractPdpImages(gecko: any): string[] {
+  return extractPdpImageDiagnostics(gecko).urls;
+}
+
+export function extractPdpImageDiagnostics(gecko: any): { urls: string[]; fieldImages: string[]; deepImages: string[] } {
   const roots = [
     gecko?.data?.data,
     gecko?.data,
@@ -83,7 +164,9 @@ export function extractPdpImages(gecko: any): string[] {
   for (const r of roots) {
     fields.push(r.images, r.photos, r.media, r.gallery, r.thumbnails, r.thumbnail, r.image, r.mainImage, r.cover);
   }
-  return collect(fields);
+  const fieldImages = collect(fields);
+  const deepImages = mergeUrls(...roots.map((r) => collectDeepImageUrls(r)));
+  return { urls: mergeUrls(fieldImages, deepImages), fieldImages, deepImages };
 }
 
 export type GeckoCallResult = {
