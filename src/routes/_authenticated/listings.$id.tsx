@@ -1,9 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { ExternalLink, ImageOff, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { formatBRL, formatDate } from "@/lib/olx";
+import { HashBadge } from "@/components/HashBadge";
 
 export const Route = createFileRoute("/_authenticated/listings/$id")({
   head: () => ({ meta: [{ title: "Detalhes do anúncio" }] }),
@@ -44,33 +48,68 @@ function ListingDetail() {
   const { id } = Route.useParams();
   const [listing, setListing] = useState<Listing | null>(null);
   const [images, setImages] = useState<Array<Image & { url?: string }>>([]);
+  const [reimporting, setReimporting] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from("olx_listings").select("*").eq("id", id).maybeSingle();
-      setListing(data as Listing | null);
-      const { data: imgs } = await supabase
-        .from("listing_images")
-        .select("id,original_storage_path,status,position")
-        .eq("listing_id", id)
-        .order("position", { ascending: true });
-      const list = (imgs as Image[]) ?? [];
-      const paths = list.map((i) => i.original_storage_path).filter((p): p is string => !!p);
-      let signed: Array<{ signedUrl: string | null }> = [];
-      if (paths.length > 0) {
-        const { data: s } = await supabase.storage.from("olx-images").createSignedUrls(paths, 3600);
-        signed = s ?? [];
-      }
-      const map = new Map(paths.map((p, i) => [p, signed[i]?.signedUrl]));
-      setImages(list.map((im) => ({ ...im, url: im.original_storage_path ? (map.get(im.original_storage_path) ?? undefined) : undefined })));
-    })();
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("olx_listings").select("*").eq("id", id).maybeSingle();
+    setListing(data as Listing | null);
+    const { data: imgs } = await supabase
+      .from("listing_images")
+      .select("id,original_storage_path,status,position")
+      .eq("listing_id", id)
+      .order("position", { ascending: true });
+    const list = (imgs as Image[]) ?? [];
+    const paths = list.map((i) => i.original_storage_path).filter((p): p is string => !!p);
+    let signed: Array<{ signedUrl: string | null }> = [];
+    if (paths.length > 0) {
+      const { data: s } = await supabase.storage.from("olx-images").createSignedUrls(paths, 3600);
+      signed = s ?? [];
+    }
+    const map = new Map(paths.map((p, i) => [p, signed[i]?.signedUrl]));
+    setImages(list.map((im) => ({ ...im, url: im.original_storage_path ? (map.get(im.original_storage_path) ?? undefined) : undefined })));
   }, [id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const reimport = useCallback(async () => {
+    if (!listing) return;
+    setReimporting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("import-olx-listing", {
+        body: { urls: [listing.source_url] },
+      });
+      if (error) throw error;
+      const jobId = (data as { job_id?: string })?.job_id;
+      if (!jobId) throw new Error("Job não retornado");
+
+      // Polling simples
+      const start = Date.now();
+      while (Date.now() - start < 60_000) {
+        await new Promise((r) => setTimeout(r, 1500));
+        const { data: job } = await supabase
+          .from("olx_import_jobs")
+          .select("status")
+          .eq("id", jobId)
+          .maybeSingle();
+        const s = (job as { status?: string } | null)?.status;
+        if (s && s !== "queued" && s !== "processing") break;
+      }
+      await load();
+      toast.success("Reimportação concluída");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao reimportar");
+    } finally {
+      setReimporting(false);
+    }
+  }, [listing, load]);
 
   if (!listing) return <p className="text-sm text-muted-foreground">Carregando...</p>;
 
   const attrs = listing.attributes_json && typeof listing.attributes_json === "object"
     ? Object.entries(listing.attributes_json as Record<string, unknown>)
     : [];
+
+  const hasImages = images.length > 0;
 
   return (
     <div className="space-y-6">
@@ -84,17 +123,45 @@ function ListingDetail() {
             {[listing.neighborhood, listing.city, listing.state].filter(Boolean).join(" · ")}
           </div>
         </div>
-        <div className="text-right">
+        <div className="flex flex-col items-end gap-2">
           <div className="text-3xl font-semibold">{formatBRL(listing.price)}</div>
           <div className="text-xs text-muted-foreground">Publicado: {formatDate(listing.listed_at)}</div>
+          <a
+            href={listing.source_url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+          >
+            <ExternalLink className="h-3.5 w-3.5" /> Abrir na OLX
+          </a>
         </div>
       </div>
 
       <Card>
         <CardHeader><CardTitle>Fotos</CardTitle></CardHeader>
         <CardContent>
-          {images.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Sem imagens.</p>
+          {!hasImages ? (
+            <div className="flex flex-col items-start gap-3 rounded-md border border-dashed p-6">
+              <div className="flex items-center gap-2">
+                <ImageOff className="h-5 w-5 text-muted-foreground" />
+                <p className="font-medium">Fotos indisponíveis</p>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                A GeckoAPI não conseguiu extrair as fotos deste anúncio (comum em imóveis). A página da OLX
+                pode expor as fotos em outro momento — tente reimportar mais tarde, ou veja as fotos direto no site.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={reimport} disabled={reimporting}>
+                  <RefreshCw className={`mr-2 h-4 w-4 ${reimporting ? "animate-spin" : ""}`} />
+                  {reimporting ? "Reimportando..." : "Reimportar anúncio"}
+                </Button>
+                <Button asChild size="sm" variant="outline">
+                  <a href={listing.source_url} target="_blank" rel="noreferrer">
+                    <ExternalLink className="mr-2 h-4 w-4" /> Ver fotos na OLX
+                  </a>
+                </Button>
+              </div>
+            </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
               {images.map((im) => (
@@ -133,21 +200,42 @@ function ListingDetail() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Vendedor (apenas hashes)</CardTitle></CardHeader>
-        <CardContent className="grid gap-2 text-sm">
-          <div><span className="text-muted-foreground">seller_id: </span><code className="break-all">{listing.seller_id ?? "—"}</code></div>
-          <div><span className="text-muted-foreground">nome (hash): </span><code className="break-all">{listing.seller_name_hash ?? "—"}</code></div>
+        <CardHeader>
+          <CardTitle>Vendedor</CardTitle>
+          <p className="text-xs font-normal text-muted-foreground">
+            Nome e telefone são hasheados pela GeckoAPI por conformidade LGPD — servem para
+            identificar o mesmo vendedor entre anúncios, não para contato direto. Para falar com
+            ele, use o botão <em>Abrir na OLX</em> acima.
+          </p>
+        </CardHeader>
+        <CardContent className="grid gap-4 text-sm">
+          <div>
+            <div className="text-xs text-muted-foreground">ID público do vendedor</div>
+            <code className="mt-0.5 break-all text-xs">{listing.seller_id ?? "—"}</code>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Nome</div>
+            {listing.seller_name_hash ? (
+              <div className="mt-1"><HashBadge hash={listing.seller_name_hash} kind="name" /></div>
+            ) : <div>—</div>}
+          </div>
           <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">profissional:</span>
+            <span className="text-xs text-muted-foreground">Profissional:</span>
             {listing.seller_is_professional == null ? "—" : <Badge>{listing.seller_is_professional ? "sim" : "não"}</Badge>}
           </div>
           <div>
-            <div className="text-muted-foreground">telefones (hashes):</div>
+            <div className="text-xs text-muted-foreground">Telefones</div>
             {listing.phone_hashes && listing.phone_hashes.length > 0 ? (
-              <ul className="mt-1 space-y-1">
-                {listing.phone_hashes.map((h) => <li key={h}><code className="break-all text-xs">{h}</code></li>)}
+              <ul className="mt-1 space-y-2">
+                {listing.phone_hashes.map((h) => (
+                  <li key={h}><HashBadge hash={h} kind="phone" /></li>
+                ))}
               </ul>
-            ) : <div>—</div>}
+            ) : (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Este anúncio não expôs telefones no momento da extração.
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>
