@@ -57,7 +57,7 @@ function collect(fields: any[]): string[] {
       if (u && !seen.has(u)) { seen.add(u); out.push(u); }
     }
   }
-  return out.slice(0, 20);
+  return out.slice(0, 40);
 }
 
 const IMAGE_EXT_RE = /https?:\/\/[^\s"'<>\\]+?\.(?:jpe?g|png|webp)(?:\?[^\s"'<>\\]*)?/gi;
