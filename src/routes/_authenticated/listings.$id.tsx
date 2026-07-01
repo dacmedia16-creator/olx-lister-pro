@@ -142,6 +142,25 @@ function ListingDetail() {
   }, [listing, load]);
 
   const [enhanceProgress, setEnhanceProgress] = useState<{ done: number; total: number } | null>(null);
+  const [enhancingIds, setEnhancingIds] = useState<Set<string>>(new Set());
+
+  const enhanceOne = useCallback(async (imageId: string) => {
+    setEnhancingIds((prev) => { const n = new Set(prev); n.add(imageId); return n; });
+    try {
+      const { data, error } = await supabase.functions.invoke("enhance-listing-images", {
+        body: { listing_id: id, image_ids: [imageId] },
+      });
+      if (error) throw error;
+      const r = (data as { results?: Array<{ ok: boolean; error?: string }> })?.results?.[0];
+      if (r && !r.ok) throw new Error(r.error || "Falha ao tratar");
+      await load();
+      toast.success("Foto tratada");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao tratar foto");
+    } finally {
+      setEnhancingIds((prev) => { const n = new Set(prev); n.delete(imageId); return n; });
+    }
+  }, [id, load]);
 
   const enhance = useCallback(async () => {
     setEnhancing(true);

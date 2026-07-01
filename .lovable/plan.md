@@ -1,16 +1,26 @@
-## Aumentar limite de fotos por anúncio para 20
+## Objetivo
+Adicionar um botão de "tratar com IA" em cada foto individualmente na tela de detalhes do anúncio, além do botão em lote já existente.
 
-### O que mudar
-O limite atual de 10 fotos por anúncio está hardcoded em 3 pontos do arquivo `supabase/functions/_shared/gecko.ts`:
+## Mudanças
 
-1. `collect()` — linha 60: `out.slice(0, 10)` → `out.slice(0, 20)`
-2. `collectDeepImageUrls()` — linha 135: `out.slice(0, 10)` → `out.slice(0, 20)`
-3. `mergeUrls()` — linha 150: `out.slice(0, 10)` → `out.slice(0, 20)`
+**Arquivo:** `src/routes/_authenticated/listings.$id.tsx`
 
-### Impacto
-- A Edge Function `import-olx-listing` passará a extrair e persistir até 20 URLs de imagem por anúncio.
-- O deep scan continua parando antecipadamente em 20 itens (`out.length >= 20`), então a performance não muda.
-- Nenhuma alteração de schema ou frontend é necessária — o campo `image_urls` já aceita arrays de qualquer tamanho.
+1. Criar novo estado `enhancingIds: Set<string>` para rastrear quais imagens estão sendo tratadas individualmente.
+2. Criar função `enhanceOne(imageId)` que:
+   - Adiciona o ID ao set `enhancingIds`.
+   - Chama `enhance-listing-images` com `{ listing_id: id, image_ids: [imageId] }`.
+   - Recarrega dados via `load()`.
+   - Mostra toast de sucesso/erro.
+   - Remove o ID do set no `finally`.
+3. No grid de miniaturas (linhas 348-394), adicionar em cada card:
+   - Botão sobre a imagem (canto superior direito) com ícone `Sparkles`:
+     - Texto/tooltip: "Tratar" (ou "Retratar" se `isEnhanced`).
+     - Desabilitado se `enhancingIds.has(im.id)`, `enhancing` (batch), ou sem `original_external_url`.
+     - Mostra spinner quando processando.
+   - Aparece no hover (`opacity-0 group-hover:opacity-100`), similar ao botão de download.
+4. Se `im.enhancement_status === "processing"`, manter o overlay atual "tratando…".
 
-### Deploy
-Após a edição, re-deploy das Edge Functions afetadas.
+## Comportamento
+- Batch (botão do topo) continua funcionando igual.
+- Individual permite retratar apenas 1 foto específica sem re-processar todas — útil para corrigir uma foto que ficou ruim.
+- Nada muda na Edge Function `enhance-listing-images` (ela já aceita `image_ids`).
