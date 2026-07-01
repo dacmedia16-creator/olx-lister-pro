@@ -35,6 +35,7 @@ type Row = {
   category: string | null;
   listed_at: string | null;
   created_at: string;
+  source_portal: string | null;
 };
 
 type Img = { listing_id: string; original_external_url: string | null; position: number | null };
@@ -48,6 +49,7 @@ function ListingsPage() {
   const [q, setQ] = useState("");
   const [min, setMin] = useState("");
   const [max, setMax] = useState("");
+  const [portal, setPortal] = useState<"" | "olx" | "zap">("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const handleDelete = async (id: string) => {
