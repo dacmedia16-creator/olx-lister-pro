@@ -38,8 +38,9 @@ function bytesToDataUrl(bytes: Uint8Array, contentType: string): string {
   return `data:${contentType};base64,${btoa(bin)}`;
 }
 
-// Converte qualquer foto em um canvas horizontal 16:9 (TARGET_W x TARGET_H) com letterbox branco.
-// Isso força o Gemini a devolver saída horizontal (ele preserva o aspect ratio da entrada).
+// Converte qualquer foto em um canvas horizontal 16:9 (TARGET_W x TARGET_H).
+// Em vez de faixa branca, preenche as laterais com um espelho borrado das bordas da própria foto.
+// Isso dá ao Gemini um "chute inicial" com cores/texturas do ambiente real para outpainting realista.
 async function toHorizontalCanvas(bytes: Uint8Array): Promise<Uint8Array> {
   const decoded = await decodeImage(bytes);
   const src = decoded as Image;
@@ -56,9 +57,47 @@ async function toHorizontalCanvas(bytes: Uint8Array): Promise<Uint8Array> {
     drawW = Math.round(TARGET_H * srcRatio);
   }
   const resized = src.clone().resize(drawW, drawH);
-  const canvas = new Image(TARGET_W, TARGET_H).fill(0xffffffff);
+  const canvas = new Image(TARGET_W, TARGET_H);
+
+  // Preenche fundo esticando a foto inteira e borrando forte — cores do próprio ambiente.
+  const bgStretch = src.clone().resize(TARGET_W, TARGET_H);
+  try { (bgStretch as any).blur(20); } catch { /* imagescript blur may vary */ }
+  canvas.composite(bgStretch, 0, 0);
+
   const offX = Math.floor((TARGET_W - drawW) / 2);
   const offY = Math.floor((TARGET_H - drawH) / 2);
+
+  // Se sobrar espaço lateral, sobrepõe bordas espelhadas + borradas para transição mais natural
+  if (offX > 0) {
+    const stripW = Math.max(1, Math.floor(srcW * 0.08));
+    // Faixa esquerda: primeiros stripW pixels da foto, espelhados
+    const leftStrip = src.clone().crop(0, 0, stripW, srcH);
+    (leftStrip as any).flip?.(true, false);
+    const leftFill = leftStrip.resize(offX, TARGET_H);
+    try { (leftFill as any).blur(15); } catch { /* noop */ }
+    canvas.composite(leftFill, 0, 0);
+    // Faixa direita
+    const rightStrip = src.clone().crop(srcW - stripW, 0, stripW, srcH);
+    (rightStrip as any).flip?.(true, false);
+    const rightFill = rightStrip.resize(offX, TARGET_H);
+    try { (rightFill as any).blur(15); } catch { /* noop */ }
+    canvas.composite(rightFill, TARGET_W - offX, 0);
+  }
+  if (offY > 0) {
+    const stripH = Math.max(1, Math.floor(srcH * 0.08));
+    const topStrip = src.clone().crop(0, 0, srcW, stripH);
+    (topStrip as any).flip?.(false, true);
+    const topFill = topStrip.resize(TARGET_W, offY);
+    try { (topFill as any).blur(15); } catch { /* noop */ }
+    canvas.composite(topFill, 0, 0);
+    const botStrip = src.clone().crop(0, srcH - stripH, srcW, stripH);
+    (botStrip as any).flip?.(false, true);
+    const botFill = botStrip.resize(TARGET_W, offY);
+    try { (botFill as any).blur(15); } catch { /* noop */ }
+    canvas.composite(botFill, 0, TARGET_H - offY);
+  }
+
+  // Foto original nítida por cima
   canvas.composite(resized, offX, offY);
   return await canvas.encode(); // PNG
 }
