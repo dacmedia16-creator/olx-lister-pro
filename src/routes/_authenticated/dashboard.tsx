@@ -74,6 +74,9 @@ function Dashboard() {
               {recent.map((l) => (
                 <li key={l.id} className="flex items-center justify-between py-2">
                   <Link to="/listings/$id" params={{ id: l.id }} className="flex-1 truncate text-sm hover:underline">
+                    <span className={`mr-2 rounded px-1.5 py-0.5 text-[10px] font-semibold text-white ${l.source_portal === "zap" ? "bg-blue-600" : "bg-purple-600"}`}>
+                      {l.source_portal === "zap" ? "ZAP" : "OLX"}
+                    </span>
                     {l.title ?? "(sem título)"}
                   </Link>
                   <div className="ml-3 flex items-center gap-3 text-sm text-muted-foreground">
