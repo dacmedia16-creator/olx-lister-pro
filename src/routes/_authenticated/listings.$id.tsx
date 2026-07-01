@@ -458,15 +458,26 @@ function ListingDetail() {
                           <div className="absolute left-1 top-1 rounded bg-primary px-1 text-[10px] text-primary-foreground">IA</div>
                         )}
                         {canEnhance && !isProcessing && (
-                          <button
-                            type="button"
-                            onClick={() => enhanceOne(im.id)}
-                            disabled={enhancing}
-                            title={isEnhanced ? "Retratar com IA" : "Tratar com IA"}
-                            className="absolute right-8 top-1 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            <Sparkles className="h-3 w-3" /> {isEnhanced ? "Retratar" : "Tratar"}
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => enhanceOne(im.id, "enhance")}
+                              disabled={enhancing}
+                              title={isEnhanced ? "Retratar com IA" : "Tratar com IA"}
+                              className="absolute right-8 top-1 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <Sparkles className="h-3 w-3" /> {isEnhanced ? "Retratar" : "Tratar"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => enhanceOne(im.id, "watermark_only")}
+                              disabled={enhancing}
+                              title="Remover apenas marca d'água"
+                              className="absolute left-1 bottom-1 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <Eraser className="h-3 w-3" /> Marca
+                            </button>
+                          </>
                         )}
                         <button
                           type="button"
