@@ -1,0 +1,1 @@
+UPDATE public.listing_images SET enhancement_status = 'pending', error_message = NULL WHERE enhancement_status = 'processing';
