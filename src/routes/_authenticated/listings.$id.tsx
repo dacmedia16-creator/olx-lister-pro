@@ -59,9 +59,11 @@ type Image = { id: string; original_external_url: string | null; original_storag
 
 function ListingDetail() {
   const { id } = Route.useParams();
+  const navigate = useNavigate();
   const [listing, setListing] = useState<Listing | null>(null);
   const [images, setImages] = useState<Image[]>([]);
   const [reimporting, setReimporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("olx_listings").select("*").eq("id", id).maybeSingle();
