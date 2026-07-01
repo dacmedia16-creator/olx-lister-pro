@@ -1,19 +1,26 @@
-## Validação de aspect ratio 16:9 antes de salvar
+## Problema
 
-Alterar `supabase/functions/enhance-listing-images/index.ts` para validar cada foto retornada pelo Gemini antes do upload no bucket.
+Ao clicar em "Tratar fotos com IA", a Edge Function retorna erro non-2xx. Logs mostram `CPU Time exceeded` — a função processa todas as fotos (10+) em série, e cada uma faz decode + resize + encode + validação com `imagescript` mais chamada Gemini. Isso estoura o limite de CPU do runtime da Edge Function.
 
-### Fluxo
-1. Após `callGeminiEdit` retornar o PNG, decodificar com `imagescript` e ler `width`/`height`.
-2. Calcular `ratio = width / height` e comparar com `16/9 ≈ 1.777` (tolerância ±3%, ou seja `1.72` a `1.83`).
-3. **Se estiver dentro da tolerância**: salva como está.
-4. **Se estiver fora** (saída veio quadrada, vertical, ou proporção estranha): re-encaixa a imagem gerada num canvas horizontal 1536×864 com letterbox branco (reutiliza `toHorizontalCanvas` já existente) e salva a versão corrigida.
-5. Registrar em `processing_logs` (metadata) o par `{original_ratio, final_ratio, was_corrected}` para auditoria.
+## Solução
 
-### Extras
-- Se decodificar falhar, marcar a imagem como `failed` com mensagem clara (evita salvar bytes corrompidos).
-- Reaproveitar `toHorizontalCanvas(bytes)` — já existe no arquivo; sem novas dependências.
-- Redeploy da função `enhance-listing-images`.
+### 1. Backend (`enhance-listing-images/index.ts`)
+- Aceitar `image_ids` (já aceita) e adicionar limite máximo de **2 imagens por invocação** (`MAX_PER_CALL = 2`). Se vierem mais, processa só as 2 primeiras e devolve `remaining_ids` no JSON de resposta.
+- Trocar a **validação de ratio pós-Gemini**: em vez de `decodeImage` completo (custa CPU alto), ler apenas o header PNG (bytes 16–24 = width/height big-endian) para pegar dimensões. Só chama `toHorizontalCanvas` de correção se estiver fora da tolerância — mantendo a garantia 16:9.
+- Manter o pipeline: download → letterbox horizontal → Gemini → validação header → (opcional) recanvas → upload.
+
+### 2. Frontend (`src/routes/_authenticated/listings.$id.tsx`)
+- Reescrever a função `enhance()` para:
+  1. Buscar IDs das imagens do anúncio ainda não tratadas (ou todas se for retratamento).
+  2. Chamar `enhance-listing-images` em loop, passando `image_ids` em lotes de 2, até esgotar.
+  3. Após cada lote, dar `await load()` para o usuário ver o progresso ("3/10 tratadas…" via toast atualizado ou contador simples).
+  4. No fim, toast com total de sucesso/falha.
+- Botão passa a mostrar "Tratando X/Y…" enquanto processa.
 
 ### Fora do escopo
-- Não retrata fotos já salvas anteriormente (usuário reprocessa clicando "Tratar fotos com IA").
-- Não altera o prompt nem o pipeline de entrada (letterbox já garante entrada horizontal).
+- Não muda o prompt, o modelo Gemini, nem a lógica de letterbox de entrada.
+- Não altera `listings.index.tsx` (a página de detalhes é a única que dispara enhancement).
+- Não persiste fila em tabela — o loop vive no cliente enquanto a página está aberta (mesmo padrão do polling atual de importação).
+
+### Deploy
+- Redeploy da função `enhance-listing-images`.
