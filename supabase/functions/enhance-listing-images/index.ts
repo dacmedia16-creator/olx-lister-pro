@@ -128,7 +128,7 @@ function extractImageB64FromResponse(json: any): string | null {
   return null;
 }
 
-async function callGeminiEdit(dataUrl: string): Promise<string> {
+async function callGeminiEdit(dataUrl: string, promptText: string = PROMPT): Promise<string> {
   const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -141,7 +141,7 @@ async function callGeminiEdit(dataUrl: string): Promise<string> {
       messages: [{
         role: "user",
         content: [
-          { type: "text", text: PROMPT },
+          { type: "text", text: promptText },
           { type: "image_url", image_url: { url: dataUrl } },
         ],
       }],
@@ -157,6 +157,30 @@ async function callGeminiEdit(dataUrl: string): Promise<string> {
   const b64 = extractImageB64FromResponse(json);
   if (!b64) throw new Error("Resposta sem imagem gerada");
   return b64;
+}
+
+// Detecta faixas quase-brancas amostrando pixels a 2% da esquerda/direita.
+async function hasWhiteSideBars(bytes: Uint8Array): Promise<boolean> {
+  try {
+    const img = await decodeImage(bytes) as Image;
+    const w = img.width, h = img.height;
+    const colL = Math.max(1, Math.floor(w * 0.02));
+    const colR = Math.min(w - 1, Math.floor(w * 0.98));
+    const samples = 20;
+    let whites = 0, total = 0;
+    for (let i = 0; i < samples; i++) {
+      const y = Math.max(1, Math.floor((i + 0.5) * h / samples));
+      for (const x of [colL, colR]) {
+        const px = img.getPixelAt(x, y);
+        const r = (px >>> 24) & 0xff;
+        const g = (px >>> 16) & 0xff;
+        const b = (px >>> 8) & 0xff;
+        if (r > 245 && g > 245 && b > 245) whites++;
+        total++;
+      }
+    }
+    return total > 0 && whites / total > 0.7;
+  } catch { return false; }
 }
 
 function b64ToBytes(b64: string): Uint8Array {
