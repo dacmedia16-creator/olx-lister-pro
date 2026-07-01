@@ -1,11 +1,13 @@
-Alterar o prompt fixo usado pela Edge Function `enhance-listing-images` para:
+## Ajuste do prompt de IA: sempre horizontal
 
-> "Melhore a imagem sem mudar o ambiente, deixe na Vertical."
+### Objetivo
+Alterar o prompt da Edge Function `enhance-listing-images` para que as fotos tratadas pela IA sejam sempre geradas na orientação horizontal, nunca vertical.
 
-## Mudanças
+### Alteração
+1. **Arquivo**: `supabase/functions/enhance-listing-images/index.ts`
+   - **Linha 17**: trocar `PROMPT = "Melhore a imagem sem mudar o ambiente, deixe na Vertical."` para `PROMPT = "Melhore a imagem sem mudar o ambiente, deixe na horizontal."`.
 
-1. `supabase/functions/enhance-listing-images/index.ts`
-   - Trocar constante `PROMPT` de "…deixe na horizontal." para "…deixe na Vertical."
-2. Redeploy da função `enhance-listing-images`.
+2. **Deploy**: reimplantar a Edge Function `enhance-listing-images` para que a mudança entre em vigor nas próximas chamadas.
 
-Nenhuma mudança de UI, banco ou fluxo. Fotos já tratadas anteriormente permanecem como estão; novas execuções (botão "Tratar fotos com IA") passarão a usar o novo prompt.
+### Nota
+Fotos já tratadas anteriormente com o prompt vertical permanecem como estão (armazenadas no bucket). Novas execuções do botão "Tratar fotos com IA" usarão o prompt horizontal.
