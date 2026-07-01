@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { formatBRL, formatDate } from "@/lib/olx";
 import { HashBadge } from "@/components/HashBadge";
+import { OlxImageCarousel } from "@/components/OlxImageCarousel";
 
 export const Route = createFileRoute("/_authenticated/listings/$id")({
   head: () => ({ meta: [{ title: "Detalhes do anúncio" }] }),
@@ -42,12 +43,12 @@ type Listing = {
   olx_delivery_enabled: boolean | null;
 };
 
-type Image = { id: string; original_storage_path: string | null; status: string; position: number | null };
+type Image = { id: string; original_external_url: string | null; original_storage_path: string | null; status: string; position: number | null };
 
 function ListingDetail() {
   const { id } = Route.useParams();
   const [listing, setListing] = useState<Listing | null>(null);
-  const [images, setImages] = useState<Array<Image & { url?: string }>>([]);
+  const [images, setImages] = useState<Image[]>([]);
   const [reimporting, setReimporting] = useState(false);
 
   const load = useCallback(async () => {
@@ -55,18 +56,10 @@ function ListingDetail() {
     setListing(data as Listing | null);
     const { data: imgs } = await supabase
       .from("listing_images")
-      .select("id,original_storage_path,status,position")
+      .select("id,original_external_url,original_storage_path,status,position")
       .eq("listing_id", id)
       .order("position", { ascending: true });
-    const list = (imgs as Image[]) ?? [];
-    const paths = list.map((i) => i.original_storage_path).filter((p): p is string => !!p);
-    let signed: Array<{ signedUrl: string | null }> = [];
-    if (paths.length > 0) {
-      const { data: s } = await supabase.storage.from("olx-images").createSignedUrls(paths, 3600);
-      signed = s ?? [];
-    }
-    const map = new Map(paths.map((p, i) => [p, signed[i]?.signedUrl]));
-    setImages(list.map((im) => ({ ...im, url: im.original_storage_path ? (map.get(im.original_storage_path) ?? undefined) : undefined })));
+    setImages((imgs as Image[]) ?? []);
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
