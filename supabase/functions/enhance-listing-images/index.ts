@@ -15,7 +15,8 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 const BUCKET = "olx-images";
-const PROMPT = "Melhore a foto do imóvel mantendo o ambiente real (paredes, piso, teto, móveis, iluminação). A imagem está em formato horizontal 16:9 com bordas brancas nas laterais — preencha essas bordas estendendo naturalmente o mesmo ambiente de forma coerente e realista, sem inventar móveis novos, sem mudar cores nem estilo. Resultado final deve ser sempre horizontal (paisagem).";
+const PROMPT = "Outpainting de foto de imóvel em formato horizontal 16:9. As laterais da imagem contêm uma prévia BORRADA do próprio ambiente (paredes, piso, teto continuados) — SUBSTITUA essas laterais por continuação NÍTIDA e FOTORREALISTA do mesmo cômodo, estendendo naturalmente parede, piso, teto e iluminação. REGRAS OBRIGATÓRIAS: (1) NUNCA deixe faixas brancas, cinzas ou bordas borradas no resultado final; (2) a imagem inteira deve parecer UMA ÚNICA FOTO nítida de ponta a ponta; (3) NÃO invente móveis novos, NÃO adicione objetos, NÃO mude cores, estilo ou iluminação do ambiente central; (4) apenas melhore nitidez/exposição do miolo original e complete as laterais de forma coerente. Resultado sempre horizontal (paisagem).";
+const RETRY_PROMPT = PROMPT + " ATENÇÃO: a tentativa anterior devolveu faixas brancas nas laterais — desta vez REMOVA COMPLETAMENTE qualquer área branca ou borrada nas bordas e substitua por continuação realista da parede/piso/teto.";
 const TARGET_W = 1536;
 const TARGET_H = 864;
 const MODEL = "google/gemini-2.5-flash-image";
@@ -37,8 +38,9 @@ function bytesToDataUrl(bytes: Uint8Array, contentType: string): string {
   return `data:${contentType};base64,${btoa(bin)}`;
 }
 
-// Converte qualquer foto em um canvas horizontal 16:9 (TARGET_W x TARGET_H) com letterbox branco.
-// Isso força o Gemini a devolver saída horizontal (ele preserva o aspect ratio da entrada).
+// Converte qualquer foto em um canvas horizontal 16:9 (TARGET_W x TARGET_H).
+// Em vez de faixa branca, preenche as laterais com um espelho borrado das bordas da própria foto.
+// Isso dá ao Gemini um "chute inicial" com cores/texturas do ambiente real para outpainting realista.
 async function toHorizontalCanvas(bytes: Uint8Array): Promise<Uint8Array> {
   const decoded = await decodeImage(bytes);
   const src = decoded as Image;
@@ -55,9 +57,47 @@ async function toHorizontalCanvas(bytes: Uint8Array): Promise<Uint8Array> {
     drawW = Math.round(TARGET_H * srcRatio);
   }
   const resized = src.clone().resize(drawW, drawH);
-  const canvas = new Image(TARGET_W, TARGET_H).fill(0xffffffff);
+  const canvas = new Image(TARGET_W, TARGET_H);
+
+  // Preenche fundo esticando a foto inteira e borrando forte — cores do próprio ambiente.
+  const bgStretch = src.clone().resize(TARGET_W, TARGET_H);
+  try { (bgStretch as any).blur(20); } catch { /* imagescript blur may vary */ }
+  canvas.composite(bgStretch, 0, 0);
+
   const offX = Math.floor((TARGET_W - drawW) / 2);
   const offY = Math.floor((TARGET_H - drawH) / 2);
+
+  // Se sobrar espaço lateral, sobrepõe bordas espelhadas + borradas para transição mais natural
+  if (offX > 0) {
+    const stripW = Math.max(1, Math.floor(srcW * 0.08));
+    // Faixa esquerda: primeiros stripW pixels da foto, espelhados
+    const leftStrip = src.clone().crop(0, 0, stripW, srcH);
+    (leftStrip as any).flip?.(true, false);
+    const leftFill = leftStrip.resize(offX, TARGET_H);
+    try { (leftFill as any).blur(15); } catch { /* noop */ }
+    canvas.composite(leftFill, 0, 0);
+    // Faixa direita
+    const rightStrip = src.clone().crop(srcW - stripW, 0, stripW, srcH);
+    (rightStrip as any).flip?.(true, false);
+    const rightFill = rightStrip.resize(offX, TARGET_H);
+    try { (rightFill as any).blur(15); } catch { /* noop */ }
+    canvas.composite(rightFill, TARGET_W - offX, 0);
+  }
+  if (offY > 0) {
+    const stripH = Math.max(1, Math.floor(srcH * 0.08));
+    const topStrip = src.clone().crop(0, 0, srcW, stripH);
+    (topStrip as any).flip?.(false, true);
+    const topFill = topStrip.resize(TARGET_W, offY);
+    try { (topFill as any).blur(15); } catch { /* noop */ }
+    canvas.composite(topFill, 0, 0);
+    const botStrip = src.clone().crop(0, srcH - stripH, srcW, stripH);
+    (botStrip as any).flip?.(false, true);
+    const botFill = botStrip.resize(TARGET_W, offY);
+    try { (botFill as any).blur(15); } catch { /* noop */ }
+    canvas.composite(botFill, 0, TARGET_H - offY);
+  }
+
+  // Foto original nítida por cima
   canvas.composite(resized, offX, offY);
   return await canvas.encode(); // PNG
 }
@@ -88,7 +128,7 @@ function extractImageB64FromResponse(json: any): string | null {
   return null;
 }
 
-async function callGeminiEdit(dataUrl: string): Promise<string> {
+async function callGeminiEdit(dataUrl: string, promptText: string = PROMPT): Promise<string> {
   const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -101,7 +141,7 @@ async function callGeminiEdit(dataUrl: string): Promise<string> {
       messages: [{
         role: "user",
         content: [
-          { type: "text", text: PROMPT },
+          { type: "text", text: promptText },
           { type: "image_url", image_url: { url: dataUrl } },
         ],
       }],
@@ -117,6 +157,30 @@ async function callGeminiEdit(dataUrl: string): Promise<string> {
   const b64 = extractImageB64FromResponse(json);
   if (!b64) throw new Error("Resposta sem imagem gerada");
   return b64;
+}
+
+// Detecta faixas quase-brancas amostrando pixels a 2% da esquerda/direita.
+async function hasWhiteSideBars(bytes: Uint8Array): Promise<boolean> {
+  try {
+    const img = await decodeImage(bytes) as Image;
+    const w = img.width, h = img.height;
+    const colL = Math.max(1, Math.floor(w * 0.02));
+    const colR = Math.min(w - 1, Math.floor(w * 0.98));
+    const samples = 20;
+    let whites = 0, total = 0;
+    for (let i = 0; i < samples; i++) {
+      const y = Math.max(1, Math.floor((i + 0.5) * h / samples));
+      for (const x of [colL, colR]) {
+        const px = img.getPixelAt(x, y);
+        const r = (px >>> 24) & 0xff;
+        const g = (px >>> 16) & 0xff;
+        const b = (px >>> 8) & 0xff;
+        if (r > 245 && g > 245 && b > 245) whites++;
+        total++;
+      }
+    }
+    return total > 0 && whites / total > 0.7;
+  } catch { return false; }
 }
 
 function b64ToBytes(b64: string): Uint8Array {
@@ -180,17 +244,35 @@ Deno.serve(async (req) => {
       return { width: dv.getUint32(16), height: dv.getUint32(20) };
     }
 
-    const results: Array<{ id: string; ok: boolean; error?: string; original_ratio?: number; final_ratio?: number; was_corrected?: boolean }> = [];
+    const results: Array<{ id: string; ok: boolean; error?: string; original_ratio?: number; final_ratio?: number; was_corrected?: boolean; white_bars_detected?: boolean; retried?: boolean }> = [];
     for (const img of targets) {
       try {
         const srcBytes = await fetchBytes(img.original_external_url!);
         if (!srcBytes) throw new Error("Falha ao baixar imagem original");
         const horizontalPng = await toHorizontalCanvas(srcBytes);
         const dataUrl = bytesToDataUrl(horizontalPng, "image/png");
-        const b64 = await callGeminiEdit(dataUrl);
+        let b64 = await callGeminiEdit(dataUrl, PROMPT);
         let bytes = b64ToBytes(b64);
 
-        // Validação leve: lê apenas header PNG para pegar dimensões
+        // Detecta faixas brancas nas laterais — se sim, refaz uma vez com prompt reforçado
+        let whiteBars = await hasWhiteSideBars(bytes);
+        let retried = false;
+        if (whiteBars) {
+          try {
+            b64 = await callGeminiEdit(dataUrl, RETRY_PROMPT);
+            const retryBytes = b64ToBytes(b64);
+            retried = true;
+            const stillWhite = await hasWhiteSideBars(retryBytes);
+            if (!stillWhite) {
+              bytes = retryBytes;
+              whiteBars = false;
+            } else {
+              bytes = retryBytes; // aceita mesmo assim, mas registra
+            }
+          } catch { /* mantém primeira tentativa */ }
+        }
+
+        // Validação de aspect ratio via header PNG
         let originalRatio: number | undefined;
         let finalRatio: number | undefined;
         let wasCorrected = false;
@@ -220,7 +302,7 @@ Deno.serve(async (req) => {
           enhanced_at: new Date().toISOString(),
           error_message: null,
         }).eq("id", img.id);
-        results.push({ id: img.id, ok: true, original_ratio: originalRatio, final_ratio: finalRatio, was_corrected: wasCorrected });
+        results.push({ id: img.id, ok: true, original_ratio: originalRatio, final_ratio: finalRatio, was_corrected: wasCorrected, white_bars_detected: whiteBars, retried });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         await admin.from("listing_images").update({
