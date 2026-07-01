@@ -1,0 +1,131 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { formatBRL, formatDate } from "@/lib/olx";
+
+export const Route = createFileRoute("/_authenticated/listings/")({
+  head: () => ({ meta: [{ title: "Anúncios importados" }] }),
+  component: ListingsPage,
+});
+
+type Row = {
+  id: string;
+  title: string | null;
+  price: number | null;
+  city: string | null;
+  neighborhood: string | null;
+  category: string | null;
+  listed_at: string | null;
+  created_at: string;
+};
+
+type Img = { listing_id: string; original_storage_path: string | null; position: number | null };
+
+function ListingsPage() {
+  const [rows, setRows] = useState<Row[]>([]);
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const [city, setCity] = useState("");
+  const [neighborhood, setNeighborhood] = useState("");
+  const [category, setCategory] = useState("");
+  const [q, setQ] = useState("");
+  const [min, setMin] = useState("");
+  const [max, setMax] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      let query = supabase
+        .from("olx_listings")
+        .select("id,title,price,city,neighborhood,category,listed_at,created_at")
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (city) query = query.ilike("city", `%${city}%`);
+      if (neighborhood) query = query.ilike("neighborhood", `%${neighborhood}%`);
+      if (category) query = query.ilike("category", `%${category}%`);
+      if (q) query = query.ilike("title", `%${q}%`);
+      if (min) query = query.gte("price", Number(min));
+      if (max) query = query.lte("price", Number(max));
+      const { data } = await query;
+      setRows((data as Row[]) ?? []);
+    })();
+  }, [city, neighborhood, category, q, min, max]);
+
+  const ids = useMemo(() => rows.map((r) => r.id), [rows]);
+  useEffect(() => {
+    if (ids.length === 0) { setThumbs({}); return; }
+    (async () => {
+      const { data } = await supabase
+        .from("listing_images")
+        .select("listing_id,original_storage_path,position")
+        .in("listing_id", ids)
+        .eq("status", "downloaded")
+        .order("position", { ascending: true });
+      const first: Record<string, Img> = {};
+      for (const im of (data as Img[]) ?? []) {
+        if (!first[im.listing_id] && im.original_storage_path) first[im.listing_id] = im;
+      }
+      const paths = Object.values(first).map((i) => i.original_storage_path!).filter(Boolean);
+      if (paths.length === 0) { setThumbs({}); return; }
+      const { data: signed } = await supabase.storage.from("olx-images").createSignedUrls(paths, 3600);
+      const map: Record<string, string> = {};
+      signed?.forEach((s, idx) => {
+        const path = paths[idx];
+        const listingId = Object.entries(first).find(([, v]) => v.original_storage_path === path)?.[0];
+        if (listingId && s.signedUrl) map[listingId] = s.signedUrl;
+      });
+      setThumbs(map);
+    })();
+  }, [ids]);
+
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-semibold tracking-tight">Anúncios importados</h1>
+
+      <Card>
+        <CardContent className="grid gap-3 pt-6 md:grid-cols-6">
+          <div className="space-y-1"><Label>Cidade</Label><Input value={city} onChange={(e) => setCity(e.target.value)} /></div>
+          <div className="space-y-1"><Label>Bairro</Label><Input value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} /></div>
+          <div className="space-y-1"><Label>Categoria</Label><Input value={category} onChange={(e) => setCategory(e.target.value)} /></div>
+          <div className="space-y-1"><Label>Título</Label><Input value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <div className="space-y-1"><Label>Preço mín.</Label><Input type="number" value={min} onChange={(e) => setMin(e.target.value)} /></div>
+          <div className="space-y-1"><Label>Preço máx.</Label><Input type="number" value={max} onChange={(e) => setMax(e.target.value)} /></div>
+          <div className="md:col-span-6">
+            <Button variant="ghost" size="sm" onClick={() => { setCity(""); setNeighborhood(""); setCategory(""); setQ(""); setMin(""); setMax(""); }}>Limpar filtros</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Nenhum anúncio encontrado.</p>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {rows.map((l) => (
+            <Link key={l.id} to="/listings/$id" params={{ id: l.id }} className="block">
+              <Card className="h-full overflow-hidden transition-shadow hover:shadow-md">
+                <div className="aspect-video w-full overflow-hidden bg-muted">
+                  {thumbs[l.id] ? (
+                    <img src={thumbs[l.id]} alt={l.title ?? ""} className="h-full w-full object-cover" loading="lazy" />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-xs text-muted-foreground">sem imagem</div>
+                  )}
+                </div>
+                <CardContent className="space-y-1 py-3">
+                  <div className="line-clamp-2 text-sm font-medium">{l.title ?? "(sem título)"}</div>
+                  <div className="text-base font-semibold">{formatBRL(l.price)}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {[l.neighborhood, l.city].filter(Boolean).join(" · ") || "—"}
+                  </div>
+                  <div className="text-xs text-muted-foreground">{l.category ?? "—"}</div>
+                  <div className="text-xs text-muted-foreground">Publicado: {formatDate(l.listed_at ?? l.created_at)}</div>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
