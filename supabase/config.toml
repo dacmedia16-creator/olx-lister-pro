@@ -1,1 +1,10 @@
 project_id = "dhhacfivuajuhjbzzszr"
+
+[functions.import-olx-listing]
+verify_jwt = true
+
+[functions.search-olx-listings]
+verify_jwt = true
+
+[functions.enhance-listing-images]
+verify_jwt = true

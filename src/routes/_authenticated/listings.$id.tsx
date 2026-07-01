@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
-import { ExternalLink, ImageOff, RefreshCw, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Download, ExternalLink, ImageOff, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +21,7 @@ import { formatBRL, formatDate } from "@/lib/olx";
 import { HashBadge } from "@/components/HashBadge";
 import { OlxImageCarousel } from "@/components/OlxImageCarousel";
 import { deleteListing } from "@/lib/delete-listing";
+import { downloadEnhanced, downloadEnhancedZip, getEnhancedSignedUrl } from "@/lib/enhanced-images";
 
 export const Route = createFileRoute("/_authenticated/listings/$id")({
   head: () => ({ meta: [{ title: "Detalhes do anúncio" }] }),
@@ -56,7 +57,15 @@ type Listing = {
   images_source: string | null;
 };
 
-type Image = { id: string; original_external_url: string | null; original_storage_path: string | null; status: string; position: number | null };
+type Image = {
+  id: string;
+  original_external_url: string | null;
+  original_storage_path: string | null;
+  status: string;
+  position: number | null;
+  enhanced_storage_path: string | null;
+  enhancement_status: string | null;
+};
 
 function ListingDetail() {
   const { id } = Route.useParams();
@@ -65,19 +74,40 @@ function ListingDetail() {
   const [images, setImages] = useState<Image[]>([]);
   const [reimporting, setReimporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [enhancing, setEnhancing] = useState(false);
+  const [showEnhanced, setShowEnhanced] = useState(true);
+  const [enhancedUrls, setEnhancedUrls] = useState<Record<string, string>>({});
+  const [downloadingZip, setDownloadingZip] = useState(false);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("olx_listings").select("*").eq("id", id).maybeSingle();
     setListing(data as Listing | null);
     const { data: imgs } = await supabase
       .from("listing_images")
-      .select("id,original_external_url,original_storage_path,status,position")
+      .select("id,original_external_url,original_storage_path,status,position,enhanced_storage_path,enhancement_status")
       .eq("listing_id", id)
       .order("position", { ascending: true });
     setImages((imgs as Image[]) ?? []);
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Resolve signed URLs para as imagens tratadas
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const map: Record<string, string> = {};
+      for (const im of images) {
+        if (im.enhanced_storage_path && im.enhancement_status === "done") {
+          const u = await getEnhancedSignedUrl(im.enhanced_storage_path);
+          if (u) map[im.id] = u;
+        }
+      }
+      if (!cancelled) setEnhancedUrls(map);
+    })();
+    return () => { cancelled = true; };
+  }, [images]);
+
 
   const reimport = useCallback(async () => {
     if (!listing) return;
@@ -111,6 +141,45 @@ function ListingDetail() {
     }
   }, [listing, load]);
 
+  const enhance = useCallback(async () => {
+    setEnhancing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("enhance-listing-images", {
+        body: { listing_id: id },
+      });
+      if (error) throw error;
+      const results = (data as { results?: Array<{ ok: boolean }> })?.results ?? [];
+      const ok = results.filter((r) => r.ok).length;
+      toast.success(`Fotos tratadas: ${ok}/${results.length}`);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao tratar fotos");
+    } finally {
+      setEnhancing(false);
+    }
+  }, [id, load]);
+
+  const enhancedList = useMemo(
+    () => images.filter((i) => i.enhanced_storage_path && i.enhancement_status === "done"),
+    [images],
+  );
+
+  const downloadAll = useCallback(async () => {
+    if (enhancedList.length === 0) return;
+    setDownloadingZip(true);
+    try {
+      const items = enhancedList.map((im, idx) => ({
+        path: im.enhanced_storage_path!,
+        name: `foto-${String(idx + 1).padStart(2, "0")}.png`,
+      }));
+      await downloadEnhancedZip(items, `anuncio-${id}.zip`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao gerar ZIP");
+    } finally {
+      setDownloadingZip(false);
+    }
+  }, [enhancedList, id]);
+
   if (!listing) return <p className="text-sm text-muted-foreground">Carregando...</p>;
 
   const attrs = listing.attributes_json && typeof listing.attributes_json === "object"
@@ -118,6 +187,7 @@ function ListingDetail() {
     : [];
 
   const hasImages = images.length > 0;
+  const hasAnyEnhanced = enhancedList.length > 0;
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -130,6 +200,7 @@ function ListingDetail() {
       setDeleting(false);
     }
   };
+
 
   return (
     <div className="space-y-6">
@@ -178,7 +249,32 @@ function ListingDetail() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Fotos</CardTitle></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+          <CardTitle>Fotos</CardTitle>
+          {hasImages && (
+            <div className="flex flex-wrap items-center gap-2">
+              {hasAnyEnhanced && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowEnhanced((v) => !v)}
+                >
+                  {showEnhanced ? "Ver originais" : "Ver tratadas"}
+                </Button>
+              )}
+              <Button size="sm" onClick={enhance} disabled={enhancing}>
+                <Sparkles className={`mr-2 h-4 w-4 ${enhancing ? "animate-pulse" : ""}`} />
+                {enhancing ? "Tratando..." : hasAnyEnhanced ? "Retratar com IA" : "Tratar fotos com IA"}
+              </Button>
+              {hasAnyEnhanced && (
+                <Button size="sm" variant="secondary" onClick={downloadAll} disabled={downloadingZip}>
+                  <Download className="mr-2 h-4 w-4" />
+                  {downloadingZip ? "Gerando ZIP..." : `Baixar ZIP (${enhancedList.length})`}
+                </Button>
+              )}
+            </div>
+          )}
+        </CardHeader>
         <CardContent>
           {!hasImages ? (
             <div className="flex flex-col items-start gap-3 rounded-md border border-dashed p-6">
@@ -210,36 +306,64 @@ function ListingDetail() {
                 </div>
               )}
               <OlxImageCarousel
-                urls={images.map((i) => i.original_external_url).filter((u): u is string => !!u)}
+                urls={images
+                  .map((i) => (showEnhanced && enhancedUrls[i.id]) || i.original_external_url)
+                  .filter((u): u is string => !!u)}
                 alt={listing.title ?? ""}
                 className="rounded-md"
               />
-              {images.length > 1 && (
+              {images.length > 0 && (
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
-                  {images.map((im) => (
-                    <div key={im.id} className="aspect-square overflow-hidden rounded bg-muted">
-                      {im.original_external_url ? (
-                        <img
-                          src={im.original_external_url}
-                          alt=""
-                          referrerPolicy="no-referrer"
-                          loading="lazy"
-                          className="h-full w-full object-cover"
-                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">
-                          {im.status === "failed" ? "falhou" : "—"}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                  {images.map((im, idx) => {
+                    const enhUrl = enhancedUrls[im.id];
+                    const displaySrc = (showEnhanced && enhUrl) || im.original_external_url;
+                    const isEnhanced = !!enhUrl && showEnhanced;
+                    return (
+                      <div key={im.id} className="group relative aspect-square overflow-hidden rounded bg-muted">
+                        {displaySrc ? (
+                          <img
+                            src={displaySrc}
+                            alt=""
+                            referrerPolicy="no-referrer"
+                            loading="lazy"
+                            className="h-full w-full object-cover"
+                            onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">
+                            {im.status === "failed" ? "falhou" : "—"}
+                          </div>
+                        )}
+                        {im.enhancement_status === "processing" && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-[10px] text-white">
+                            tratando…
+                          </div>
+                        )}
+                        {im.enhancement_status === "failed" && (
+                          <div className="absolute left-1 top-1 rounded bg-destructive px-1 text-[10px] text-destructive-foreground">falhou</div>
+                        )}
+                        {isEnhanced && (
+                          <>
+                            <div className="absolute left-1 top-1 rounded bg-primary px-1 text-[10px] text-primary-foreground">IA</div>
+                            <button
+                              type="button"
+                              onClick={() => downloadEnhanced(im.enhanced_storage_path!, `foto-${String(idx + 1).padStart(2, "0")}.png`)}
+                              className="absolute inset-x-1 bottom-1 flex items-center justify-center gap-1 rounded bg-black/70 px-1 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100"
+                            >
+                              <Download className="h-3 w-3" /> Baixar
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
           )}
         </CardContent>
       </Card>
+
 
       <Card>
         <CardHeader><CardTitle>Descrição</CardTitle></CardHeader>
