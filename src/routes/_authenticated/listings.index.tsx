@@ -113,8 +113,20 @@ function ListingsPage() {
           <div className="space-y-1"><Label>Título</Label><Input value={q} onChange={(e) => setQ(e.target.value)} /></div>
           <div className="space-y-1"><Label>Preço mín.</Label><Input type="number" value={min} onChange={(e) => setMin(e.target.value)} /></div>
           <div className="space-y-1"><Label>Preço máx.</Label><Input type="number" value={max} onChange={(e) => setMax(e.target.value)} /></div>
+          <div className="space-y-1">
+            <Label>Portal</Label>
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              value={portal}
+              onChange={(e) => setPortal(e.target.value as "" | "olx" | "zap")}
+            >
+              <option value="">Todos</option>
+              <option value="olx">OLX</option>
+              <option value="zap">ZAP Imóveis</option>
+            </select>
+          </div>
           <div className="md:col-span-6">
-            <Button variant="ghost" size="sm" onClick={() => { setCity(""); setNeighborhood(""); setCategory(""); setQ(""); setMin(""); setMax(""); }}>Limpar filtros</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setCity(""); setNeighborhood(""); setCategory(""); setQ(""); setMin(""); setMax(""); setPortal(""); }}>Limpar filtros</Button>
           </div>
         </CardContent>
       </Card>
