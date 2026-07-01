@@ -53,6 +53,7 @@ type Listing = {
   extracted_at: string | null;
   olx_pay_enabled: boolean | null;
   olx_delivery_enabled: boolean | null;
+  images_source: string | null;
 };
 
 type Image = { id: string; original_external_url: string | null; original_storage_path: string | null; status: string; position: number | null };
@@ -203,6 +204,11 @@ function ListingDetail() {
             </div>
           ) : (
             <div className="space-y-3">
+              {listing.images_source && listing.images_source !== "pdp" && listing.images_source !== "pdp_retry" && (
+                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
+                  As fotos deste anúncio foram obtidas por fallback ({listing.images_source}) porque o PDP oficial retornou vazio. Podem estar desatualizadas — confirme na OLX.
+                </div>
+              )}
               <OlxImageCarousel
                 urls={images.map((i) => i.original_external_url).filter((u): u is string => !!u)}
                 alt={listing.title ?? ""}

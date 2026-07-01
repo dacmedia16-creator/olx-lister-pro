@@ -77,6 +77,8 @@ export function isLikelyImageUrl(raw: string): boolean {
   }
 }
 
+const DEEP_SCAN_SKIP_KEYS_RE = /^(related|similar|suggestions?|recommendations?|recommended|otherAds|other_ads|items|ads|listings|results|carousel|nearby|youMayAlsoLike|also_viewed)$/i;
+
 function collectDeepImageUrls(root: any, maxDepth = 7): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -117,6 +119,8 @@ function collectDeepImageUrls(root: any, maxDepth = 7): string[] {
     }
 
     for (const [key, child] of Object.entries(value)) {
+      // Skip subtrees that clearly belong to sibling/related listings, not the current ad.
+      if (DEEP_SCAN_SKIP_KEYS_RE.test(key)) continue;
       const keyLooksImage = /image|img|photo|picture|media|gallery|thumbnail|cover|url|src|href/i.test(key);
       if (typeof child === "string") {
         if (keyLooksImage || isLikelyImageUrl(child)) add(child);
@@ -175,7 +179,10 @@ export function extractPdpImageDiagnostics(gecko: any): { urls: string[]; fieldI
     fields.push(r.images, r.photos, r.media, r.gallery, r.thumbnails, r.thumbnail, r.image, r.mainImage, r.cover);
   }
   const fieldImages = collect(fields);
-  const deepImages = mergeUrls(...roots.map((r) => collectDeepImageUrls(r)));
+  // Only run the deep scan when official fields returned nothing; otherwise trust the PDP.
+  const deepImages = fieldImages.length === 0
+    ? mergeUrls(...roots.map((r) => collectDeepImageUrls(r)))
+    : [];
   return { urls: mergeUrls(fieldImages, deepImages), fieldImages, deepImages };
 }
 
