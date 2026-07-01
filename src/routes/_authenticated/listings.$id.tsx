@@ -56,7 +56,7 @@ function ListingDetail() {
         .order("position", { ascending: true });
       const list = (imgs as Image[]) ?? [];
       const paths = list.map((i) => i.original_storage_path).filter((p): p is string => !!p);
-      let signed: { signedUrl: string }[] = [];
+      let signed: Array<{ signedUrl: string | null }> = [];
       if (paths.length > 0) {
         const { data: s } = await supabase.storage.from("olx-images").createSignedUrls(paths, 3600);
         signed = s ?? [];
