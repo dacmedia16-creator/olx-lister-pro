@@ -163,6 +163,21 @@ function ListingDetail() {
     }
   }, [id, load]);
 
+  const [deletingImageIds, setDeletingImageIds] = useState<Set<string>>(new Set());
+  const removeImage = useCallback(async (imageId: string) => {
+    if (!window.confirm("Excluir esta foto? Esta ação não pode ser desfeita.")) return;
+    setDeletingImageIds((prev) => { const n = new Set(prev); n.add(imageId); return n; });
+    try {
+      await deleteListingImage(imageId);
+      await load();
+      toast.success("Foto excluída");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao excluir foto");
+    } finally {
+      setDeletingImageIds((prev) => { const n = new Set(prev); n.delete(imageId); return n; });
+    }
+  }, [load]);
+
   const enhance = useCallback(async () => {
     setEnhancing(true);
     setEnhanceProgress(null);
