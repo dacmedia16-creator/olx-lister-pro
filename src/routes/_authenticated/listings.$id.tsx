@@ -156,18 +156,34 @@ function ListingDetail() {
               </div>
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-              {images.map((im) => (
-                <div key={im.id} className="aspect-video overflow-hidden rounded-md bg-muted">
-                  {im.url ? (
-                    <img src={im.url} alt="" className="h-full w-full object-cover" loading="lazy" />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                      {im.status === "failed" ? "falhou" : "processando"}
+            <div className="space-y-3">
+              <OlxImageCarousel
+                urls={images.map((i) => i.original_external_url).filter((u): u is string => !!u)}
+                alt={listing.title ?? ""}
+                className="rounded-md"
+              />
+              {images.length > 1 && (
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+                  {images.map((im) => (
+                    <div key={im.id} className="aspect-square overflow-hidden rounded bg-muted">
+                      {im.original_external_url ? (
+                        <img
+                          src={im.original_external_url}
+                          alt=""
+                          referrerPolicy="no-referrer"
+                          loading="lazy"
+                          className="h-full w-full object-cover"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">
+                          {im.status === "failed" ? "falhou" : "—"}
+                        </div>
+                      )}
                     </div>
-                  )}
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           )}
         </CardContent>
