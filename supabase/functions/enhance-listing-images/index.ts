@@ -1,5 +1,5 @@
 // Edge Function: enhance-listing-images
-// Melhora as fotos de um anúncio via Lovable AI Gateway (OpenAI gpt-image-2 edits)
+// Melhora as fotos de um anúncio via OpenAI API própria (gpt-image-1 edits)
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { decode as decodeImage, Image } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
@@ -12,11 +12,11 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const BUCKET = "olx-images";
-const PROMPT = "Melhore esta foto de imóvel e entregue no formato HORIZONTAL (paisagem, proporção aproximada 3:2). Se a foto original for vertical, faça outpainting realista estendendo naturalmente parede, piso, teto e iluminação para preencher todo o quadro horizontal. REGRAS: (1) NUNCA deixe faixas brancas, cinzas ou bordas nas laterais; (2) a imagem inteira deve parecer UMA FOTO ÚNICA e nítida; (3) NÃO invente móveis novos, NÃO mude cores, estilo ou iluminação do ambiente original; (4) apenas melhore nitidez e exposição e complete as laterais de forma coerente com o mesmo cômodo.";
+const PROMPT = "Melhore a nitidez, iluminação, exposição e cores desta foto de imóvel. NÃO altere o ambiente, móveis, layout, cores das paredes, piso ou qualquer elemento da cena original — preserve 100% do conteúdo. Entregue no formato HORIZONTAL (paisagem 3:2). Se a foto original for vertical, faça outpainting realista estendendo naturalmente parede, piso, teto e iluminação para preencher as laterais do quadro. NUNCA deixe faixas brancas, cinzas ou bordas — a imagem inteira deve parecer UMA FOTO ÚNICA e coerente.";
 const RETRY_PROMPT = PROMPT + " ATENÇÃO: a tentativa anterior deixou faixas brancas nas laterais — desta vez REMOVA COMPLETAMENTE qualquer área branca e substitua por continuação realista da parede/piso/teto.";
-const MODEL = "openai/gpt-image-2";
+const MODEL = "gpt-image-1";
 const IMAGE_SIZE = "1536x1024"; // horizontal 3:2
 const TARGET_W = 1536;
 const TARGET_H = 1024;
@@ -58,16 +58,25 @@ async function callOpenAiImageEdit(imageBytes: Uint8Array, promptText: string): 
   form.append("n", "1");
   form.append("image", new Blob([imageBytes], { type: "image/png" }), "input.png");
 
-  const r = await fetch("https://ai.gateway.lovable.dev/v1/images/edits", {
+  const r = await fetch("https://api.openai.com/v1/images/edits", {
     method: "POST",
-    headers: { "Authorization": `Bearer ${LOVABLE_API_KEY}` },
+    headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` },
     body: form,
   });
   if (!r.ok) {
     const text = await r.text().catch(() => "");
-    if (r.status === 429) throw new Error("Limite de requisições atingido (429). Tente novamente em instantes.");
-    if (r.status === 402) throw new Error("Créditos de IA esgotados (402). Adicione créditos no workspace.");
-    throw new Error(`Gateway error ${r.status}: ${text.slice(0, 400)}`);
+    if (r.status === 401) throw new Error("Chave OpenAI inválida (401). Verifique a OPENAI_API_KEY.");
+    if (r.status === 403) {
+      if (/verified|verification/i.test(text)) {
+        throw new Error("Sua organização OpenAI precisa ser verificada para usar gpt-image-1. Vá em platform.openai.com/settings/organization/general e clique em Verify.");
+      }
+      throw new Error(`OpenAI 403: ${text.slice(0, 400)}`);
+    }
+    if (r.status === 429) throw new Error("Limite de requisições OpenAI atingido (429). Tente em instantes.");
+    if (r.status === 400 && /billing|quota|hard_limit/i.test(text)) {
+      throw new Error("Sem créditos na conta OpenAI. Adicione saldo em platform.openai.com/settings/organization/billing.");
+    }
+    throw new Error(`OpenAI error ${r.status}: ${text.slice(0, 400)}`);
   }
   const json = await r.json();
   const b64 = json?.data?.[0]?.b64_json;
