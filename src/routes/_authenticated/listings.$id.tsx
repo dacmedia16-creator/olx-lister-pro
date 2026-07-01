@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
-import { ExternalLink, ImageOff, RefreshCw, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Download, ExternalLink, ImageOff, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +21,7 @@ import { formatBRL, formatDate } from "@/lib/olx";
 import { HashBadge } from "@/components/HashBadge";
 import { OlxImageCarousel } from "@/components/OlxImageCarousel";
 import { deleteListing } from "@/lib/delete-listing";
+import { downloadEnhanced, downloadEnhancedZip, getEnhancedSignedUrl } from "@/lib/enhanced-images";
 
 export const Route = createFileRoute("/_authenticated/listings/$id")({
   head: () => ({ meta: [{ title: "Detalhes do anúncio" }] }),
@@ -56,7 +57,15 @@ type Listing = {
   images_source: string | null;
 };
 
-type Image = { id: string; original_external_url: string | null; original_storage_path: string | null; status: string; position: number | null };
+type Image = {
+  id: string;
+  original_external_url: string | null;
+  original_storage_path: string | null;
+  status: string;
+  position: number | null;
+  enhanced_storage_path: string | null;
+  enhancement_status: string | null;
+};
 
 function ListingDetail() {
   const { id } = Route.useParams();
@@ -65,19 +74,40 @@ function ListingDetail() {
   const [images, setImages] = useState<Image[]>([]);
   const [reimporting, setReimporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [enhancing, setEnhancing] = useState(false);
+  const [showEnhanced, setShowEnhanced] = useState(true);
+  const [enhancedUrls, setEnhancedUrls] = useState<Record<string, string>>({});
+  const [downloadingZip, setDownloadingZip] = useState(false);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("olx_listings").select("*").eq("id", id).maybeSingle();
     setListing(data as Listing | null);
     const { data: imgs } = await supabase
       .from("listing_images")
-      .select("id,original_external_url,original_storage_path,status,position")
+      .select("id,original_external_url,original_storage_path,status,position,enhanced_storage_path,enhancement_status")
       .eq("listing_id", id)
       .order("position", { ascending: true });
     setImages((imgs as Image[]) ?? []);
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Resolve signed URLs para as imagens tratadas
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const map: Record<string, string> = {};
+      for (const im of images) {
+        if (im.enhanced_storage_path && im.enhancement_status === "done") {
+          const u = await getEnhancedSignedUrl(im.enhanced_storage_path);
+          if (u) map[im.id] = u;
+        }
+      }
+      if (!cancelled) setEnhancedUrls(map);
+    })();
+    return () => { cancelled = true; };
+  }, [images]);
+
 
   const reimport = useCallback(async () => {
     if (!listing) return;
