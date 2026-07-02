@@ -492,6 +492,17 @@ function ListingDetail() {
                             ) : (
                               <div className="flex-1" />
                             )}
+                            {isEnhanced && im.enhanced_storage_path && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); downloadEnhanced(im.enhanced_storage_path!, `foto-${String(idx + 1).padStart(2, "0")}.png`); }}
+                                title="Baixar foto tratada"
+                                aria-label="Baixar foto tratada"
+                                className="flex min-h-7 w-8 items-center justify-center border-l border-white/10 text-white hover:bg-white/10"
+                              >
+                                <Download className="h-3 w-3" />
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={(e) => { e.stopPropagation(); removeImage(im.id); }}
@@ -504,6 +515,7 @@ function ListingDetail() {
                             </button>
                           </div>
                         )}
+
 
                       </div>
                     );
