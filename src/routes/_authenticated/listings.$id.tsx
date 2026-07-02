@@ -186,7 +186,7 @@ function ListingDetail() {
     }
   }, [load]);
 
-  const enhance = useCallback(async (mode: "enhance" | "watermark_only" = "enhance") => {
+  const enhance = useCallback(async (mode: "enhance" | "watermark_only" = "enhance", quality: EnhanceQuality = "low") => {
     setEnhancing(true);
     setEnhanceProgress(null);
     try {
@@ -211,8 +211,9 @@ function ListingDetail() {
       for (let i = 0; i < queue.length; i += BATCH) {
         const batch = queue.slice(i, i + BATCH);
         const { data, error } = await supabase.functions.invoke("enhance-listing-images", {
-          body: { listing_id: id, image_ids: batch, mode },
+          body: { listing_id: id, image_ids: batch, mode, quality },
         });
+
         if (error) throw error;
         const results = (data as { results?: Array<{ ok: boolean }> })?.results ?? [];
         ok += results.filter((r) => r.ok).length;
