@@ -140,7 +140,9 @@ Deno.serve(async (req) => {
     const batchId = body?.batch_id as string | undefined;
     const imageIds = Array.isArray(body?.image_ids) ? (body.image_ids as string[]) : null;
     const mode = (body?.mode === "watermark_only" ? "watermark_only" : "enhance") as "enhance" | "watermark_only";
+    const quality = (body?.quality === "medium" ? "medium" : "low") as "low" | "medium";
     const activePrompt = mode === "watermark_only" ? WATERMARK_ONLY_PROMPT : PROMPT;
+
 
     // Fluxo 2: lote de upload avulso ------------------------------------------------
     if (batchId) {
