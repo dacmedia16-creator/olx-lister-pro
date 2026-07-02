@@ -11,7 +11,7 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/tools/enhance/new")({
   head: () => ({ meta: [{ title: "Novo lote de fotos" }] }),
-  component: NewBatch;
+  component: NewBatch,
 });
 
 const COST_PER_IMAGE_USD = 0.02;
