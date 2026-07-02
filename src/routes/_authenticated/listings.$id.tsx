@@ -85,6 +85,10 @@ function ListingDetail() {
   const [enhancedUrls, setEnhancedUrls] = useState<Record<string, string>>({});
   const [downloadingZip, setDownloadingZip] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+
 
 
   const load = useCallback(async () => {
