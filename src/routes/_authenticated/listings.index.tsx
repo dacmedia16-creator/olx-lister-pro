@@ -97,18 +97,24 @@ function ListingsPage() {
 
   const ids = useMemo(() => rows.map((r) => r.id), [rows]);
   useEffect(() => {
-    if (ids.length === 0) { setThumbs({}); return; }
+    if (ids.length === 0) { setThumbs({}); setPhotoStats({}); return; }
     (async () => {
       const { data } = await supabase
         .from("listing_images")
-        .select("listing_id,original_external_url,position")
+        .select("listing_id,original_external_url,position,enhanced_storage_path")
         .in("listing_id", ids)
         .order("position", { ascending: true });
       const first: Record<string, string> = {};
-      for (const im of (data as Img[]) ?? []) {
+      const stats: Record<string, { total: number; enhanced: number }> = {};
+      for (const im of (data as (Img & { enhanced_storage_path: string | null })[]) ?? []) {
         if (!first[im.listing_id] && im.original_external_url) first[im.listing_id] = im.original_external_url;
+        const s = stats[im.listing_id] ?? { total: 0, enhanced: 0 };
+        s.total += 1;
+        if (im.enhanced_storage_path) s.enhanced += 1;
+        stats[im.listing_id] = s;
       }
       setThumbs(first);
+      setPhotoStats(stats);
     })();
   }, [ids]);
 
