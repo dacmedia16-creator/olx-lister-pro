@@ -169,7 +169,8 @@ Deno.serve(async (req) => {
           if (dlErr || !dl) throw new Error(dlErr?.message || "Falha ao baixar original do storage");
           const srcBytes = new Uint8Array(await dl.arrayBuffer());
           const sizeArg = mode === "watermark_only" ? pickSizeForOriginal(srcBytes) : IMAGE_SIZE;
-          const bytes = await callOpenAiImageEdit(srcBytes, activePrompt, sizeArg);
+          const bytes = await callOpenAiImageEdit(srcBytes, activePrompt, sizeArg, quality);
+
           const path = `${userId}/uploads/${batchId}/enhanced/${img.id}.png`;
           const { error: upErr } = await admin.storage.from(BUCKET).upload(path, bytes, { contentType: "image/png", upsert: true });
           if (upErr) throw new Error(upErr.message);
