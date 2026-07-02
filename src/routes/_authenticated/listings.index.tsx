@@ -44,6 +44,7 @@ type Img = { listing_id: string; original_external_url: string | null; position:
 function ListingsPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const [photoStats, setPhotoStats] = useState<Record<string, { total: number; enhanced: number }>>({});
   const [city, setCity] = useState("");
   const [neighborhood, setNeighborhood] = useState("");
   const [category, setCategory] = useState("");
@@ -96,18 +97,24 @@ function ListingsPage() {
 
   const ids = useMemo(() => rows.map((r) => r.id), [rows]);
   useEffect(() => {
-    if (ids.length === 0) { setThumbs({}); return; }
+    if (ids.length === 0) { setThumbs({}); setPhotoStats({}); return; }
     (async () => {
       const { data } = await supabase
         .from("listing_images")
-        .select("listing_id,original_external_url,position")
+        .select("listing_id,original_external_url,position,enhanced_storage_path")
         .in("listing_id", ids)
         .order("position", { ascending: true });
       const first: Record<string, string> = {};
-      for (const im of (data as Img[]) ?? []) {
+      const stats: Record<string, { total: number; enhanced: number }> = {};
+      for (const im of (data as (Img & { enhanced_storage_path: string | null })[]) ?? []) {
         if (!first[im.listing_id] && im.original_external_url) first[im.listing_id] = im.original_external_url;
+        const s = stats[im.listing_id] ?? { total: 0, enhanced: 0 };
+        s.total += 1;
+        if (im.enhanced_storage_path) s.enhanced += 1;
+        stats[im.listing_id] = s;
       }
       setThumbs(first);
+      setPhotoStats(stats);
     })();
   }, [ids]);
 
@@ -234,6 +241,18 @@ function ListingsPage() {
                       <span className={`absolute left-2 top-2 rounded px-1.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur ${l.source_portal === "zap" ? "bg-blue-600/90" : "bg-purple-600/90"}`}>
                         {l.source_portal === "zap" ? "ZAP" : "OLX"}
                       </span>
+                      {photoStats[l.id]?.enhanced ? (
+                        <span
+                          className={`absolute left-2 bottom-2 rounded px-1.5 py-0.5 text-[10px] font-semibold text-white shadow ${
+                            photoStats[l.id].enhanced === photoStats[l.id].total
+                              ? "bg-emerald-600/90"
+                              : "bg-fuchsia-600/90"
+                          }`}
+                          title="Fotos tratadas por IA"
+                        >
+                          IA {photoStats[l.id].enhanced}/{photoStats[l.id].total}
+                        </span>
+                      ) : null}
                       {isProcessing && (
                         <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-sm">
                           <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -247,7 +266,12 @@ function ListingsPage() {
                         {[l.neighborhood, l.city].filter(Boolean).join(" · ") || "—"}
                       </div>
                       <div className="text-xs text-muted-foreground">{l.category ?? "—"}</div>
-                      <div className="text-xs text-muted-foreground">Publicado: {formatDate(l.listed_at ?? l.created_at)}</div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Publicado: {formatDate(l.listed_at ?? l.created_at)}</span>
+                        {photoStats[l.id]?.total ? (
+                          <span>{photoStats[l.id].enhanced}/{photoStats[l.id].total} tratadas</span>
+                        ) : null}
+                      </div>
                     </CardContent>
                   </Card>
                 </Link>

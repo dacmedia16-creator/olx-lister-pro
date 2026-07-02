@@ -21,6 +21,7 @@ type Batch = {
   status: string;
   image_count: number;
   created_at: string;
+  enhanced_count?: number;
 };
 
 function BatchesList() {
@@ -33,7 +34,20 @@ function BatchesList() {
       .from("photo_batches")
       .select("id,name,mode,status,image_count,created_at")
       .order("created_at", { ascending: false });
-    setBatches((data as Batch[]) ?? []);
+    const list = (data as Batch[]) ?? [];
+    if (list.length > 0) {
+      const ids = list.map((b) => b.id);
+      const { data: imgs } = await supabase
+        .from("photo_batch_images")
+        .select("batch_id,enhanced_storage_path")
+        .in("batch_id", ids);
+      const counts: Record<string, number> = {};
+      for (const im of (imgs as { batch_id: string; enhanced_storage_path: string | null }[]) ?? []) {
+        if (im.enhanced_storage_path) counts[im.batch_id] = (counts[im.batch_id] ?? 0) + 1;
+      }
+      for (const b of list) b.enhanced_count = counts[b.id] ?? 0;
+    }
+    setBatches(list);
     setLoading(false);
   }, []);
 
@@ -80,6 +94,17 @@ function BatchesList() {
                     <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <Badge variant="outline">{b.mode === "watermark_only" ? "Marca d'água" : "Tratar completo"}</Badge>
                       <span>{b.image_count} foto(s)</span>
+                      {b.enhanced_count ? (
+                        <Badge
+                          className={
+                            b.enhanced_count === b.image_count
+                              ? "bg-emerald-600 text-white hover:bg-emerald-600"
+                              : "bg-fuchsia-600 text-white hover:bg-fuchsia-600"
+                          }
+                        >
+                          IA {b.enhanced_count}/{b.image_count}
+                        </Badge>
+                      ) : null}
                       <span>· {formatDate(b.created_at)}</span>
                     </div>
                   </div>
