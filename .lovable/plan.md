@@ -1,13 +1,11 @@
 ## Problema
 
-Na tela `/tools/enhance/new`, clicar na área tracejada "Clique para selecionar fotos ou arraste aqui" não abre o seletor de arquivos. A causa é o padrão `<label>` envolvendo um `<input type="file" class="hidden">` — em algumas combinações de navegador/DevTools o clique não propaga para o input oculto, e além disso o texto promete drag-and-drop que hoje não está implementado.
+Navegar para `/tools/enhance/new` não abre a tela de novo lote — a URL muda mas a página continua mostrando a lista "Tratar fotos". Causa: no roteamento flat do TanStack, `tools.enhance.tsx` é pai de `tools.enhance.new.tsx` e `tools.enhance.$id.tsx`, mas o arquivo renderiza direto o conteúdo da lista em vez de um `<Outlet />`, então as rotas filhas nunca aparecem.
 
-## Correção (somente frontend, arquivo `src/routes/_authenticated/tools.enhance.new.tsx`)
+## Correção (somente frontend, roteamento)
 
-1. Substituir o `<label>` que envolve o input por um `<div role="button" tabIndex={0}>` com `onClick` que chama `inputRef.current?.click()`.
-2. Manter o `<input type="file" ref={inputRef} className="sr-only">` como irmão (fora do div clicável) para evitar conflito de propagação.
-3. Adicionar suporte real a arrastar-e-soltar: handlers `onDragOver` (preventDefault + estado `dragActive`), `onDragLeave`, `onDrop` (chama `onPick(e.dataTransfer.files)`).
-4. Feedback visual: borda destacada quando `dragActive`, cursor `not-allowed` quando `processing || files.length >= MAX_FILES`, e mensagem "Máximo atingido" nesse caso.
-5. Suporte a teclado: `onKeyDown` disparando o click em `Enter`/`Space`.
+1. Criar `src/routes/_authenticated/tools.enhance.index.tsx` com o conteúdo atual da lista (`BatchesList`) e rota `createFileRoute("/_authenticated/tools/enhance/")`.
+2. Reescrever `src/routes/_authenticated/tools.enhance.tsx` para ser apenas um layout: `component: () => <Outlet />` (sem `head`, sem UI própria — os filhos já definem título e conteúdo).
+3. Não mexer em `tools.enhance.new.tsx` nem `tools.enhance.$id.tsx`.
 
-Nenhuma mudança em lógica de upload, banco, edge function ou custo — só o gatilho de abertura do seletor e o dnd.
+Resultado: `/tools/enhance` continua listando lotes, e `/tools/enhance/new` passa a renderizar o formulário de upload.
