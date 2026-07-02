@@ -1,21 +1,36 @@
-## Problema
+## Objetivo
+Deixar as fotos tratadas pela IA com aparência mais **realista** (menos "renderizada"/"catálogo"), mantendo o custo atual (~US$ 0,02/foto, `quality: "low"`).
 
-Em `quality: "low"` o `gpt-image-1` deforma geometria: linhas retas ficam curvas, janelas ficam trapezoidais, móveis ganham proporções erradas (o sofá circulado no print é um exemplo). O prompt atual foca em nitidez e remoção de marca d'água, mas não impõe restrições explícitas de geometria/perspectiva.
+## Diagnóstico
+Hoje o prompt em `supabase/functions/enhance-listing-images/index.ts` já pede realismo e proíbe render 3D, mas na prática `gpt-image-1` em `low`:
+- suaviza demais texturas (parede, madeira, tecido) → aparência plástica
+- eleva iluminação/contraste → visual de estúdio
+- satura levemente cores → look de revista
 
-## Correção (somente prompt, sem custo extra)
+## Mudanças propostas (só no prompt `PROMPT` — modo "Tratar completo")
 
-Editar `supabase/functions/enhance-listing-images/index.ts` — apenas as constantes `PROMPT` e `WATERMARK_ONLY_PROMPT`. Nenhuma mudança em lógica, custo ou UI.
+Reforçar a seção de realismo com regras mais duras e exemplos negativos explícitos:
 
-Adicionar ao `PROMPT` uma seção **"GEOMETRIA E PROPORÇÕES (CRÍTICO)"** com regras rígidas:
-- Preservar 100% a geometria original: linhas retas continuam retas (paredes, batentes, rodapés, molduras de janela, quadros, TV, prateleiras, pisos).
-- Proibido curvar, entortar, arquear, inclinar ou distorcer qualquer aresta reta.
-- Janelas, portas, quadros e TVs devem manter retângulos perfeitos com cantos a 90°.
-- Móveis (sofá, cama, mesa, cadeira, armário) devem manter EXATAMENTE o mesmo formato, proporção, número de almofadas/gavetas/pernas e posição — proibido alongar, encolher, curvar encosto, mudar ângulo de braços ou fundir peças.
-- Perspectiva e linhas de fuga da foto original devem ser preservadas — proibido mudar ponto de vista, altura da câmera ou lente aparente.
-- Piso deve manter o mesmo padrão, direção das réguas/tábuas e alinhamento.
-- Pessoas, plantas e objetos decorativos mantêm forma anatômica correta — proibido membros extras, dedos deformados, folhas derretidas.
-- Reafirmar: a saída deve parecer a MESMA foto, apenas mais limpa e sem marca d'água — não uma reinterpretação.
+1. **Textura preservada** — obrigar manutenção de poros de parede, veios de madeira, trama de tecido, imperfeições de piso, marcas de uso. Proibir "smoothing", superfícies "limpas demais", aparência de cerâmica/plástico.
+2. **Iluminação natural intocada** — manter a luz da foto original (temperatura, direção, intensidade). Proibir realce de janelas, "golden hour" artificial, preenchimento de sombras, HDR, halos.
+3. **Cores fiéis** — manter saturação e balanço de branco originais; permitida apenas correção sutil se a foto estiver visivelmente amarelada/azulada. Proibir cores "vivas", céu mais azul, verde de plantas realçado.
+4. **Ruído fotográfico preservado** — manter o grão original da câmera/celular; não aplicar denoise agressivo.
+5. **Referência mental explícita** — instruir o modelo a mirar em "foto de celular de corretor de imóveis" e não em "foto profissional de catálogo/Airbnb Plus/render de arquitetura".
+6. **Lista negativa ampliada** — proibir explicitamente: look Airbnb Plus, render Lumion/V-Ray/Enscape, staging virtual, aparência de e-commerce, brilho especular exagerado em pisos, reflexos irreais em vidros/TVs.
 
-Adicionar o mesmo bloco ao `WATERMARK_ONLY_PROMPT` (com ênfase ainda maior, já que esse modo promete preservação total).
+Manter intactas as regras já existentes de:
+- geometria/linhas retas (não regride nada do último ajuste)
+- nitidez total (sem blur/bokeh)
+- remoção de marca d'água com reconstrução fotorrealista
+- saída horizontal 3:2 com outpainting quando vertical
 
-Depois de salvar, fazer deploy da edge function `enhance-listing-images` para o prompt entrar em vigor. Fotos já processadas precisam ser retratadas com o botão "Tratar/Retratar" para pegar o novo prompt.
+O modo `WATERMARK_ONLY_PROMPT` **não muda** (ele já preserva o original 1:1).
+
+## Arquivo alterado
+- `supabase/functions/enhance-listing-images/index.ts` — reescrever a constante `PROMPT` com as regras acima; deploy da função.
+
+## Como testar
+Após deploy, clicar **Retratar** em 1–2 fotos que ficaram com cara de render e comparar com o original.
+
+## Custo
+Sem alteração — segue `quality: "low"` a ~US$ 0,02/foto. Se mesmo assim o resultado continuar "renderizado", o próximo passo (fora deste plano) seria subir para `quality: "medium"` (~US$ 0,07/foto), o que exige aprovação explícita por causa do custo.
