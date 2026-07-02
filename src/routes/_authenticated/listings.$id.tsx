@@ -25,10 +25,8 @@ import { ImageLightbox } from "@/components/ImageLightbox";
 import { deleteListing } from "@/lib/delete-listing";
 import { deleteListingImage } from "@/lib/delete-listing-image";
 import { downloadEnhanced, downloadEnhancedZip, getEnhancedSignedUrl } from "@/lib/enhanced-images";
+import { QualityPicker, QUALITY_COST_USD, type EnhanceQuality } from "@/components/QualityPicker";
 
-// Custo aproximado por imagem: OpenAI gpt-image-1, quality=high, size=1536x1024.
-// Referência: tabela pública OpenAI (~US$ 0,19/imagem em high nessa resolução).
-const COST_PER_IMAGE_USD = 0.02;
 
 export const Route = createFileRoute("/_authenticated/listings/$id")({
   head: () => ({ meta: [{ title: "Detalhes do anúncio" }] }),
