@@ -423,6 +423,10 @@ function ListingDetail() {
                 className="rounded-md"
               />
               {images.length > 0 && (
+                <>
+                <p className="text-xs text-muted-foreground">
+                  Use os botões em cada foto para tratar, remover marca d'água ou excluir individualmente.
+                </p>
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
                   {images.map((im, idx) => {
                     const enhUrl = enhancedUrls[im.id];
@@ -430,8 +434,9 @@ function ListingDetail() {
                     const isEnhanced = !!enhUrl && showEnhanced;
                     const isProcessing = im.enhancement_status === "processing" || enhancingIds.has(im.id);
                     const canEnhance = !!im.original_external_url;
+                    const isDeleting = deletingImageIds.has(im.id);
                     return (
-                      <div key={im.id} className="group relative aspect-square overflow-hidden rounded bg-muted">
+                      <div key={im.id} className="relative aspect-square overflow-hidden rounded bg-muted">
                         {displaySrc ? (
                           <img
                             src={displaySrc}
@@ -457,37 +462,49 @@ function ListingDetail() {
                         {isEnhanced && (
                           <div className="absolute left-1 top-1 rounded bg-primary px-1 text-[10px] text-primary-foreground">IA</div>
                         )}
-                        {canEnhance && !isProcessing && (
-                          <>
+                        {!isProcessing && (
+                          <div className="absolute inset-x-0 bottom-0 flex items-stretch justify-between gap-px bg-black/60 backdrop-blur-sm">
+                            {canEnhance ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); enhanceOne(im.id, "enhance"); }}
+                                  disabled={enhancing || isDeleting}
+                                  title={isEnhanced ? "Retratar com IA" : "Tratar com IA"}
+                                  aria-label={isEnhanced ? "Retratar com IA" : "Tratar com IA"}
+                                  className="flex min-h-7 flex-1 items-center justify-center gap-1 px-1 py-1 text-[10px] text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  <Sparkles className="h-3 w-3" />
+                                  <span className="hidden sm:inline">{isEnhanced ? "Retratar" : "Tratar"}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); enhanceOne(im.id, "watermark_only"); }}
+                                  disabled={enhancing || isDeleting}
+                                  title="Remover apenas marca d'água"
+                                  aria-label="Remover apenas marca d'água"
+                                  className="flex min-h-7 flex-1 items-center justify-center gap-1 border-l border-white/10 px-1 py-1 text-[10px] text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  <Eraser className="h-3 w-3" />
+                                  <span className="hidden sm:inline">Marca</span>
+                                </button>
+                              </>
+                            ) : (
+                              <div className="flex-1" />
+                            )}
                             <button
                               type="button"
-                              onClick={() => enhanceOne(im.id, "enhance")}
-                              disabled={enhancing}
-                              title={isEnhanced ? "Retratar com IA" : "Tratar com IA"}
-                              className="absolute right-8 top-1 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                              onClick={(e) => { e.stopPropagation(); removeImage(im.id); }}
+                              disabled={isDeleting}
+                              title="Excluir foto"
+                              aria-label="Excluir foto"
+                              className="flex min-h-7 w-8 items-center justify-center border-l border-white/10 text-destructive-foreground hover:bg-destructive/80 disabled:cursor-not-allowed disabled:opacity-40"
                             >
-                              <Sparkles className="h-3 w-3" /> {isEnhanced ? "Retratar" : "Tratar"}
+                              <Trash2 className="h-3 w-3" />
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => enhanceOne(im.id, "watermark_only")}
-                              disabled={enhancing}
-                              title="Remover apenas marca d'água"
-                              className="absolute left-1 bottom-1 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                              <Eraser className="h-3 w-3" /> Marca
-                            </button>
-                          </>
+                          </div>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => removeImage(im.id)}
-                          disabled={deletingImageIds.has(im.id)}
-                          title="Excluir foto"
-                          className="absolute right-1 top-1 flex items-center justify-center rounded bg-destructive/90 p-1 text-destructive-foreground opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
+
                         {isEnhanced && (
                           <button
                             type="button"
