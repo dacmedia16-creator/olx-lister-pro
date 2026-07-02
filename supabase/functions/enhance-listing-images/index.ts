@@ -197,7 +197,7 @@ Deno.serve(async (req) => {
           type: mode === "watermark_only" ? "remove_watermark_upload" : "enhance_upload",
           status: "done",
           message: `enhance batch (${mode}): ${results.filter(r => r.ok).length}/${results.length}`,
-          metadata_json: { model: MODEL, mode, batch_id: batchId, results },
+          metadata_json: { model: MODEL, mode, quality, batch_id: batchId, results },
         });
       } catch { /* noop */ }
 
