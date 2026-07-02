@@ -194,10 +194,11 @@ function BatchDetail() {
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
           <CardTitle>Fotos</CardTitle>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={() => reprocessAll("watermark_only")} disabled={processing || imgs.length === 0}>
+            <Button size="sm" variant="outline" onClick={() => openConfirm("watermark_only", { kind: "all" })} disabled={processing || imgs.length === 0}>
               <Eraser className="mr-2 h-4 w-4" /> Remover marca (todos)
             </Button>
-            <Button size="sm" onClick={() => reprocessAll("enhance")} disabled={processing || imgs.length === 0}>
+            <Button size="sm" onClick={() => openConfirm("enhance", { kind: "all" })} disabled={processing || imgs.length === 0}>
+
               <Sparkles className="mr-2 h-4 w-4" /> Tratar (todos)
             </Button>
             {doneList.length > 0 && (
