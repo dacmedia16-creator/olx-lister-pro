@@ -1,24 +1,35 @@
-# Adicionar indicadores de fotos tratadas por IA
+# Seleção múltipla de fotos para tratamento em lote
 
 ## Objetivo
-Mostrar visualmente, fora da tela de detalhes, quais anúncios/lotes já têm fotos tratadas pela IA, com um contador `X/Y tratadas`.
+Permitir escolher fotos específicas do anúncio e aplicar "Tratar com IA" ou "Remover marca d'água" apenas nas selecionadas — em vez de sempre processar todas.
 
-## Mudanças
+## Mudanças em `src/routes/_authenticated/listings.$id.tsx`
 
-### 1. Listagem de anúncios importados (`src/routes/_authenticated/listings.index.tsx`)
-- Na query que já busca `olx_listings`, incluir contagem agregada de `listing_images` total e de `listing_images` com `enhanced_url` (ou flag equivalente já existente).
-- Em cada card:
-  - Badge "IA" no canto superior esquerdo da thumbnail quando houver ao menos 1 foto tratada.
-  - Chip discreto com contador `N/T tratadas` no rodapé do card, ao lado da contagem de fotos.
+### Estado
+- Novo `selectedIds: Set<string>` para fotos marcadas.
+- Novo `selectionMode: boolean` para alternar UI de seleção.
 
-### 2. Listagem de lotes de tratamento (`src/routes/_authenticated/tools.enhance.index.tsx`)
-- Na query de `photo_batches`, agregar contagem total de `photo_batch_images` e quantas têm `enhanced_url`.
-- Em cada card do lote:
-  - Badge "IA" quando o lote tem ao menos 1 foto tratada.
-  - Contador `N/T tratadas` no rodapé.
-  - Se `N === T`, usar variante "sucesso" (verde) no badge para indicar lote completo.
+### Header do card "Fotos"
+- Botão toggle **"Selecionar fotos"** (Check icon). Quando ativo:
+  - Substitui os botões atuais "Tratar" / "Remover marca" por:
+    - `Tratar selecionadas (N)` — desabilitado se N=0
+    - `Remover marca das selecionadas (N)` — desabilitado se N=0
+    - `Selecionar todas` / `Limpar seleção`
+    - `Cancelar` (sai do modo seleção)
+  - Os botões abrem o mesmo `AlertDialog` de confirmação existente (com `QualityPicker` e custo estimado), mas passando apenas os IDs selecionados no lugar de "todas as fotos".
 
-## Detalhes técnicos
-- Reaproveitar o mesmo componente visual de badge já usado na tela de detalhes (mesmo texto "IA", mesmas cores) para consistência.
-- Contagens feitas via `select` com `count` embutido do PostgREST (`listing_images(count)`) filtrando por `enhanced_url not null`, evitando N+1.
-- Nenhuma mudança em edge functions, banco ou lógica de processamento — apenas leitura e apresentação.
+### Grid de miniaturas
+- Quando `selectionMode` estiver ativo:
+  - Cada thumbnail ganha um `Checkbox` (canto superior direito) sobre a imagem.
+  - Clicar na foto alterna a seleção (em vez de abrir o lightbox).
+  - Overlay sutil (ring azul) nas selecionadas.
+  - Barra de ações inferior individual fica oculta para evitar cliques acidentais.
+
+### Fluxo de confirmação
+- `openEnhanceConfirm(mode, imageIds?)`: aceita lista opcional de IDs. Se omitida, mantém comportamento atual (todas as fotos com `original_external_url`).
+- O diálogo mostra `N foto(s) selecionada(s)` quando vindo do modo seleção.
+- `runEnhance` já processa em lotes de 2 — reaproveitado sem mudança lógica, apenas restringido aos IDs recebidos.
+
+## Detalhes
+- Sem mudanças em Edge Functions, banco ou storage — apenas UI e escopo dos IDs enviados.
+- Sem alteração nos cards da lista de anúncios (`listings.index.tsx`) — seleção é por foto, faz sentido só na tela de detalhes.

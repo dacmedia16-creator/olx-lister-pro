@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Eraser, ExternalLink, ImageOff, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { CheckSquare, Download, Eraser, ExternalLink, ImageOff, RefreshCw, Sparkles, Square, Trash2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -85,6 +85,10 @@ function ListingDetail() {
   const [enhancedUrls, setEnhancedUrls] = useState<Record<string, string>>({});
   const [downloadingZip, setDownloadingZip] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+
 
 
   const load = useCallback(async () => {
@@ -186,19 +190,23 @@ function ListingDetail() {
     }
   }, [load]);
 
-  const enhance = useCallback(async (mode: "enhance" | "watermark_only" = "enhance", quality: EnhanceQuality = "low") => {
+  const enhance = useCallback(async (mode: "enhance" | "watermark_only" = "enhance", quality: EnhanceQuality = "low", overrideIds?: string[]) => {
     setEnhancing(true);
     setEnhanceProgress(null);
     try {
-      // Pega todas as imagens do anúncio com URL original
-      const { data: allImgs } = await supabase
-        .from("listing_images")
-        .select("id,original_external_url")
-        .eq("listing_id", id)
-        .order("position", { ascending: true });
-      const queue = (allImgs ?? [])
-        .filter((i: any) => i.original_external_url)
-        .map((i: any) => i.id as string);
+      let queue: string[];
+      if (overrideIds && overrideIds.length > 0) {
+        queue = overrideIds;
+      } else {
+        const { data: allImgs } = await supabase
+          .from("listing_images")
+          .select("id,original_external_url")
+          .eq("listing_id", id)
+          .order("position", { ascending: true });
+        queue = (allImgs ?? [])
+          .filter((i: any) => i.original_external_url)
+          .map((i: any) => i.id as string);
+      }
       if (queue.length === 0) {
         toast.error("Nenhuma foto disponível para processar");
         return;
@@ -226,6 +234,8 @@ function ListingDetail() {
           ? `Marca d'água removida: ${ok}/${total}`
           : `Fotos tratadas: ${ok}/${total}`,
       );
+      setSelectionMode(false);
+      setSelectedIds(new Set());
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Falha ao processar fotos");
     } finally {
@@ -238,18 +248,26 @@ function ListingDetail() {
   const [pendingCount, setPendingCount] = useState(0);
   const [confirmMode, setConfirmMode] = useState<"enhance" | "watermark_only">("enhance");
   const [confirmQuality, setConfirmQuality] = useState<EnhanceQuality>("low");
+  const [confirmIds, setConfirmIds] = useState<string[] | null>(null);
 
 
-  const openEnhanceConfirm = useCallback(async (mode: "enhance" | "watermark_only" = "enhance") => {
-    const { data: allImgs, error } = await supabase
-      .from("listing_images")
-      .select("id,original_external_url")
-      .eq("listing_id", id);
-    if (error) {
-      toast.error("Falha ao contar fotos");
-      return;
+  const openEnhanceConfirm = useCallback(async (mode: "enhance" | "watermark_only" = "enhance", overrideIds?: string[]) => {
+    let count: number;
+    if (overrideIds && overrideIds.length > 0) {
+      count = overrideIds.length;
+      setConfirmIds(overrideIds);
+    } else {
+      const { data: allImgs, error } = await supabase
+        .from("listing_images")
+        .select("id,original_external_url")
+        .eq("listing_id", id);
+      if (error) {
+        toast.error("Falha ao contar fotos");
+        return;
+      }
+      count = (allImgs ?? []).filter((i: any) => i.original_external_url).length;
+      setConfirmIds(null);
     }
-    const count = (allImgs ?? []).filter((i: any) => i.original_external_url).length;
     if (count === 0) {
       toast.error("Nenhuma foto disponível para processar");
       return;
@@ -359,7 +377,7 @@ function ListingDetail() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
           <CardTitle>Fotos</CardTitle>
-          {hasImages && (
+          {hasImages && !selectionMode && (
             <div className="flex flex-wrap items-center gap-2">
               {hasAnyEnhanced && (
                 <Button
@@ -370,6 +388,10 @@ function ListingDetail() {
                   {showEnhanced ? "Ver originais" : "Ver tratadas"}
                 </Button>
               )}
+              <Button size="sm" variant="outline" onClick={() => setSelectionMode(true)} disabled={enhancing}>
+                <CheckSquare className="mr-2 h-4 w-4" />
+                Selecionar
+              </Button>
               <Button size="sm" variant="outline" onClick={() => openEnhanceConfirm("watermark_only")} disabled={enhancing}>
                 <Eraser className={`mr-2 h-4 w-4 ${enhancing ? "animate-pulse" : ""}`} />
                 Remover marca d'água
@@ -382,6 +404,7 @@ function ListingDetail() {
                     : "Processando..."
                   : hasAnyEnhanced ? "Retratar com IA" : "Tratar fotos com IA"}
               </Button>
+
               {hasAnyEnhanced && (
                 <Button size="sm" variant="secondary" onClick={downloadAll} disabled={downloadingZip}>
                   <Download className="mr-2 h-4 w-4" />
@@ -390,6 +413,49 @@ function ListingDetail() {
               )}
             </div>
           )}
+          {hasImages && selectionMode && (() => {
+            const selectableIds = images.filter((i) => i.original_external_url).map((i) => i.id);
+            const selCount = selectedIds.size;
+            const allSelected = selCount > 0 && selCount === selectableIds.length;
+            return (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium">{selCount} selecionada(s)</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setSelectedIds(allSelected ? new Set() : new Set(selectableIds))}
+                  disabled={enhancing || selectableIds.length === 0}
+                >
+                  {allSelected ? "Limpar seleção" : "Selecionar todas"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => openEnhanceConfirm("watermark_only", Array.from(selectedIds))}
+                  disabled={enhancing || selCount === 0}
+                >
+                  <Eraser className="mr-2 h-4 w-4" />
+                  Remover marca ({selCount})
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => openEnhanceConfirm("enhance", Array.from(selectedIds))}
+                  disabled={enhancing || selCount === 0}
+                >
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Tratar selecionadas ({selCount})
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
+                  disabled={enhancing}
+                >
+                  <X className="mr-2 h-4 w-4" /> Cancelar
+                </Button>
+              </div>
+            );
+          })()}
         </CardHeader>
         <CardContent>
           {!hasImages ? (
@@ -442,16 +508,30 @@ function ListingDetail() {
                     const isProcessing = im.enhancement_status === "processing" || enhancingIds.has(im.id);
                     const canEnhance = !!im.original_external_url;
                     const isDeleting = deletingImageIds.has(im.id);
+                    const isSelected = selectedIds.has(im.id);
+                    const toggleSelect = () => {
+                      setSelectedIds((prev) => {
+                        const n = new Set(prev);
+                        if (n.has(im.id)) n.delete(im.id); else n.add(im.id);
+                        return n;
+                      });
+                    };
                     return (
-                      <div key={im.id} className="relative aspect-square overflow-hidden rounded bg-muted">
+                      <div
+                        key={im.id}
+                        className={`relative aspect-square overflow-hidden rounded bg-muted ${isSelected ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}`}
+                      >
                         {displaySrc ? (
                           <img
                             src={displaySrc}
                             alt=""
                             referrerPolicy="no-referrer"
                             loading="lazy"
-                            onClick={() => setLightboxIndex(idx)}
-                            className="h-full w-full cursor-zoom-in object-cover"
+                            onClick={() => {
+                              if (selectionMode) { if (canEnhance) toggleSelect(); }
+                              else setLightboxIndex(idx);
+                            }}
+                            className={`h-full w-full object-cover ${selectionMode ? (canEnhance ? "cursor-pointer" : "cursor-not-allowed opacity-60") : "cursor-zoom-in"}`}
                             onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
                           />
                         ) : (
@@ -459,6 +539,18 @@ function ListingDetail() {
                             {im.status === "failed" ? "falhou" : "—"}
                           </div>
                         )}
+
+                        {selectionMode && canEnhance && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); toggleSelect(); }}
+                            className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded bg-background/90 text-foreground shadow"
+                            aria-label={isSelected ? "Desmarcar foto" : "Selecionar foto"}
+                          >
+                            {isSelected ? <CheckSquare className="h-4 w-4 text-primary" /> : <Square className="h-4 w-4" />}
+                          </button>
+                        )}
+
 
                         {isProcessing && (
                           <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-[10px] text-white">
@@ -471,7 +563,7 @@ function ListingDetail() {
                         {isEnhanced && (
                           <div className="absolute left-1 top-1 rounded bg-primary px-1 text-[10px] text-primary-foreground">IA</div>
                         )}
-                        {!isProcessing && (
+                        {!isProcessing && !selectionMode && (
                           <div className="absolute inset-x-0 bottom-0 flex items-stretch justify-between gap-px bg-black/60 backdrop-blur-sm">
                             {canEnhance ? (
                               <>
@@ -635,7 +727,7 @@ function ListingDetail() {
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-sm">
                 <div>
-                  <strong>{pendingCount}</strong> foto(s) serão processadas pela OpenAI.
+                  <strong>{pendingCount}</strong> foto(s){confirmIds ? " selecionada(s)" : ""} serão processadas pela OpenAI.
                 </div>
                 {confirmMode === "watermark_only" && (
                   <div className="text-muted-foreground">
@@ -658,7 +750,7 @@ function ListingDetail() {
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setConfirmOpen(false); void enhance(confirmMode, confirmQuality); }}>
+            <AlertDialogAction onClick={() => { setConfirmOpen(false); void enhance(confirmMode, confirmQuality, confirmIds ?? undefined); }}>
               {confirmMode === "watermark_only" ? "Confirmar e remover" : "Confirmar e tratar"}
             </AlertDialogAction>
           </AlertDialogFooter>
