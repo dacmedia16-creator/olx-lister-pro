@@ -1,19 +1,24 @@
-Adicionar botões **Tratar** e **Remover marca** em cada card da tela "Anúncios importados" (`/listings`), reaproveitando o mesmo diálogo de qualidade Baixa/Média já usado na tela de detalhes.
+# Adicionar indicadores de fotos tratadas por IA
 
-## Comportamento
-- Cada card ganha dois botões pequenos sobre a imagem (ao lado do botão de excluir): ✨ Tratar e 🩹 Marca.
-- Clicar abre um `AlertDialog` com:
-  - Contagem de fotos daquele anúncio que serão processadas.
-  - `QualityPicker` (Baixa ~US$ 0,02 · Média ~US$ 0,07).
-  - Custo total estimado calculado dinamicamente.
-  - Botões Cancelar / Confirmar.
-- Ao confirmar, invoca `enhance-listing-images` em lotes de 2, passando `listing_id`, `mode` (`enhance` ou `watermark_only`) e `quality`.
-- Toast de progresso e resultado (ok/total).
-- Enquanto processa aquele card, botões ficam desabilitados e mostra spinner discreto.
+## Objetivo
+Mostrar visualmente, fora da tela de detalhes, quais anúncios/lotes já têm fotos tratadas pela IA, com um contador `X/Y tratadas`.
+
+## Mudanças
+
+### 1. Listagem de anúncios importados (`src/routes/_authenticated/listings.index.tsx`)
+- Na query que já busca `olx_listings`, incluir contagem agregada de `listing_images` total e de `listing_images` com `enhanced_url` (ou flag equivalente já existente).
+- Em cada card:
+  - Badge "IA" no canto superior esquerdo da thumbnail quando houver ao menos 1 foto tratada.
+  - Chip discreto com contador `N/T tratadas` no rodapé do card, ao lado da contagem de fotos.
+
+### 2. Listagem de lotes de tratamento (`src/routes/_authenticated/tools.enhance.index.tsx`)
+- Na query de `photo_batches`, agregar contagem total de `photo_batch_images` e quantas têm `enhanced_url`.
+- Em cada card do lote:
+  - Badge "IA" quando o lote tem ao menos 1 foto tratada.
+  - Contador `N/T tratadas` no rodapé.
+  - Se `N === T`, usar variante "sucesso" (verde) no badge para indicar lote completo.
 
 ## Detalhes técnicos
-- Arquivo a editar: `src/routes/_authenticated/listings.index.tsx`.
-- Reaproveitar `QualityPicker` e `QUALITY_COST_USD` de `@/components/QualityPicker`.
-- Contagem de fotos: consulta rápida a `listing_images` filtrando por `original_external_url not null` no momento de abrir o diálogo (mesma lógica de `openEnhanceConfirm` em `listings.$id.tsx`).
-- Ícones: `Sparkles`, `Eraser` de `lucide-react`.
-- Nenhuma mudança em Edge Function, banco ou outras telas.
+- Reaproveitar o mesmo componente visual de badge já usado na tela de detalhes (mesmo texto "IA", mesmas cores) para consistência.
+- Contagens feitas via `select` com `count` embutido do PostgREST (`listing_images(count)`) filtrando por `enhanced_url not null`, evitando N+1.
+- Nenhuma mudança em edge functions, banco ou lógica de processamento — apenas leitura e apresentação.
