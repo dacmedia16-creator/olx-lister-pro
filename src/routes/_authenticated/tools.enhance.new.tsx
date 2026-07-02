@@ -163,8 +163,13 @@ function NewBatch() {
               </div>
             </RadioGroup>
           </div>
+          <div className="space-y-2">
+            <Label>Qualidade da IA</Label>
+            <QualityPicker value={quality} onChange={setQuality} disabled={processing} />
+          </div>
         </CardContent>
       </Card>
+
 
       <Card>
         <CardHeader><CardTitle>Fotos ({files.length}/{MAX_FILES})</CardTitle></CardHeader>
