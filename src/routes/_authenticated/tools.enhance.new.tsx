@@ -8,25 +8,28 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { X } from "lucide-react";
 import { toast } from "sonner";
+import { QualityPicker, QUALITY_COST_USD, type EnhanceQuality } from "@/components/QualityPicker";
 
 export const Route = createFileRoute("/_authenticated/tools/enhance/new")({
   head: () => ({ meta: [{ title: "Novo lote de fotos" }] }),
   component: NewBatch,
 });
 
-const COST_PER_IMAGE_USD = 0.02;
 const MAX_FILES = 20;
 const MAX_SIZE = 15 * 1024 * 1024;
+
 
 function NewBatch() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<"enhance" | "watermark_only">("enhance");
+  const [quality, setQuality] = useState<EnhanceQuality>("low");
   const [name, setName] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
 
   const onPick = useCallback((list: FileList | null) => {
     if (!list) return;
@@ -54,9 +57,11 @@ function NewBatch() {
 
   const start = async () => {
     if (files.length === 0) return;
+    const cost = QUALITY_COST_USD[quality];
     if (!window.confirm(
-      `${files.length} foto(s) serão processadas pela IA.\nCusto estimado: US$ ${(files.length * COST_PER_IMAGE_USD).toFixed(2)} (~US$ ${COST_PER_IMAGE_USD.toFixed(2)}/foto).\nContinuar?`
+      `${files.length} foto(s) serão processadas pela IA.\nQualidade: ${quality === "medium" ? "Média" : "Baixa"}\nCusto estimado: US$ ${(files.length * cost).toFixed(2)} (~US$ ${cost.toFixed(2)}/foto).\nContinuar?`
     )) return;
+
 
     setProcessing(true);
     setProgress({ done: 0, total: files.length });
@@ -103,7 +108,7 @@ function NewBatch() {
       for (let i = 0; i < imageIds.length; i += BATCH) {
         const chunk = imageIds.slice(i, i + BATCH);
         const { error } = await supabase.functions.invoke("enhance-listing-images", {
-          body: { batch_id: batchId, image_ids: chunk, mode },
+          body: { batch_id: batchId, image_ids: chunk, mode, quality },
         });
         if (error) throw error;
         done += chunk.length;
@@ -121,7 +126,9 @@ function NewBatch() {
     }
   };
 
-  const totalCost = (files.length * COST_PER_IMAGE_USD).toFixed(2);
+  const perFotoCost = QUALITY_COST_USD[quality];
+  const totalCost = (files.length * perFotoCost).toFixed(2);
+
 
   return (
     <div className="space-y-4">
@@ -156,8 +163,13 @@ function NewBatch() {
               </div>
             </RadioGroup>
           </div>
+          <div className="space-y-2">
+            <Label>Qualidade da IA</Label>
+            <QualityPicker value={quality} onChange={setQuality} disabled={processing} />
+          </div>
         </CardContent>
       </Card>
+
 
       <Card>
         <CardHeader><CardTitle>Fotos ({files.length}/{MAX_FILES})</CardTitle></CardHeader>
@@ -223,7 +235,7 @@ function NewBatch() {
       <div className="flex items-center justify-between rounded-md border bg-muted/30 p-3 text-sm">
         <div>
           Custo estimado: <strong>US$ {totalCost}</strong>{" "}
-          <span className="text-muted-foreground">(~US$ {COST_PER_IMAGE_USD.toFixed(2)} por foto)</span>
+          <span className="text-muted-foreground">(~US$ {perFotoCost.toFixed(2)} por foto · qualidade {quality === "medium" ? "média" : "baixa"})</span>
         </div>
         <Button onClick={start} disabled={processing || files.length === 0}>
           {processing

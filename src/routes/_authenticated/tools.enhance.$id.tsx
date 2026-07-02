@@ -4,10 +4,21 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Download, Eraser, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { downloadEnhanced, downloadEnhancedZip, getEnhancedSignedUrl } from "@/lib/enhanced-images";
 import { deleteBatchImage } from "@/lib/delete-batch";
+import { QualityPicker, QUALITY_COST_USD, type EnhanceQuality } from "@/components/QualityPicker";
 
 export const Route = createFileRoute("/_authenticated/tools/enhance/$id")({
   head: () => ({ meta: [{ title: "Lote de fotos" }] }),
@@ -25,6 +36,7 @@ type Img = {
   error_message: string | null;
 };
 
+
 const COST = 0.02;
 
 function BatchDetail() {
@@ -36,6 +48,11 @@ function BatchDetail() {
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [zipping, setZipping] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmMode, setConfirmMode] = useState<"enhance" | "watermark_only">("enhance");
+  const [confirmScope, setConfirmScope] = useState<{ kind: "all" } | { kind: "one"; imageId: string }>({ kind: "all" });
+  const [quality, setQuality] = useState<EnhanceQuality>("low");
+
 
   const load = useCallback(async () => {
     const { data: b } = await supabase.from("photo_batches").select("*").eq("id", id).maybeSingle();
@@ -70,11 +87,11 @@ function BatchDetail() {
 
   const doneList = useMemo(() => imgs.filter((i) => i.enhanced_storage_path && i.enhancement_status === "done"), [imgs]);
 
-  const processOne = useCallback(async (imageId: string, mode: "enhance" | "watermark_only") => {
+  const processOne = useCallback(async (imageId: string, mode: "enhance" | "watermark_only", q: EnhanceQuality) => {
     setBusyIds((p) => { const n = new Set(p); n.add(imageId); return n; });
     try {
       const { data, error } = await supabase.functions.invoke("enhance-listing-images", {
-        body: { batch_id: id, image_ids: [imageId], mode },
+        body: { batch_id: id, image_ids: [imageId], mode, quality: q },
       });
       if (error) throw error;
       const r = (data as { results?: Array<{ ok: boolean; error?: string }> })?.results?.[0];
@@ -88,17 +105,16 @@ function BatchDetail() {
     }
   }, [id, load]);
 
-  const reprocessAll = useCallback(async (mode: "enhance" | "watermark_only") => {
+  const reprocessAll = useCallback(async (mode: "enhance" | "watermark_only", q: EnhanceQuality) => {
     const ids = imgs.map((i) => i.id);
     if (ids.length === 0) return;
-    if (!window.confirm(`Reprocessar ${ids.length} foto(s)? Custo estimado: US$ ${(ids.length * COST).toFixed(2)}`)) return;
     setProcessing(true);
     try {
       const BATCH = 2;
       for (let i = 0; i < ids.length; i += BATCH) {
         const chunk = ids.slice(i, i + BATCH);
         const { error } = await supabase.functions.invoke("enhance-listing-images", {
-          body: { batch_id: id, image_ids: chunk, mode },
+          body: { batch_id: id, image_ids: chunk, mode, quality: q },
         });
         if (error) throw error;
         await load();
@@ -110,6 +126,26 @@ function BatchDetail() {
       setProcessing(false);
     }
   }, [id, imgs, load]);
+
+  const openConfirm = (mode: "enhance" | "watermark_only", scope: { kind: "all" } | { kind: "one"; imageId: string }) => {
+    setConfirmMode(mode);
+    setConfirmScope(scope);
+    setQuality("low");
+    setConfirmOpen(true);
+  };
+
+  const confirmCount = confirmScope.kind === "one" ? 1 : imgs.length;
+  const confirmCost = (confirmCount * QUALITY_COST_USD[quality]).toFixed(2);
+
+  const runConfirmed = () => {
+    setConfirmOpen(false);
+    if (confirmScope.kind === "one") {
+      void processOne(confirmScope.imageId, confirmMode, quality);
+    } else {
+      void reprocessAll(confirmMode, quality);
+    }
+  };
+
 
   const removeImg = async (imageId: string) => {
     if (!window.confirm("Excluir esta foto do lote?")) return;
@@ -158,10 +194,11 @@ function BatchDetail() {
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
           <CardTitle>Fotos</CardTitle>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={() => reprocessAll("watermark_only")} disabled={processing || imgs.length === 0}>
+            <Button size="sm" variant="outline" onClick={() => openConfirm("watermark_only", { kind: "all" })} disabled={processing || imgs.length === 0}>
               <Eraser className="mr-2 h-4 w-4" /> Remover marca (todos)
             </Button>
-            <Button size="sm" onClick={() => reprocessAll("enhance")} disabled={processing || imgs.length === 0}>
+            <Button size="sm" onClick={() => openConfirm("enhance", { kind: "all" })} disabled={processing || imgs.length === 0}>
+
               <Sparkles className="mr-2 h-4 w-4" /> Tratar (todos)
             </Button>
             {doneList.length > 0 && (
@@ -215,12 +252,13 @@ function BatchDetail() {
                     </div>
                     {im.error_message && <p className="mt-1 text-[11px] text-destructive">{im.error_message}</p>}
                     <div className="mt-2 flex flex-wrap gap-1">
-                      <Button size="sm" variant="outline" onClick={() => processOne(im.id, "enhance")} disabled={isBusy || processing}>
+                      <Button size="sm" variant="outline" onClick={() => openConfirm("enhance", { kind: "one", imageId: im.id })} disabled={isBusy || processing}>
                         <Sparkles className="mr-1 h-3 w-3" /> Tratar
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => processOne(im.id, "watermark_only")} disabled={isBusy || processing}>
+                      <Button size="sm" variant="outline" onClick={() => openConfirm("watermark_only", { kind: "one", imageId: im.id })} disabled={isBusy || processing}>
                         <Eraser className="mr-1 h-3 w-3" /> Marca
                       </Button>
+
                       {eUrl && (
                         <Button size="sm" variant="secondary" onClick={() => downloadEnhanced(im.enhanced_storage_path!, `foto-${String(idx + 1).padStart(2, "0")}.png`)}>
                           <Download className="mr-1 h-3 w-3" /> Baixar
@@ -234,6 +272,28 @@ function BatchDetail() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmMode === "watermark_only" ? "Remover marca d'água" : "Tratar fotos"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmCount} foto(s) serão processadas. Escolha a qualidade da IA:
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <QualityPicker value={quality} onChange={setQuality} />
+          <div className="rounded-md bg-muted/40 p-2 text-sm">
+            Custo estimado: <strong>US$ {confirmCost}</strong>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={runConfirmed}>Processar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+
   );
 }

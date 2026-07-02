@@ -36,13 +36,14 @@ async function fetchBytes(url: string): Promise<Uint8Array | null> {
 
 
 
-async function callOpenAiImageEdit(imageBytes: Uint8Array, promptText: string, sizeOverride?: string): Promise<Uint8Array> {
+async function callOpenAiImageEdit(imageBytes: Uint8Array, promptText: string, sizeOverride?: string, quality: "low" | "medium" = "low"): Promise<Uint8Array> {
   const form = new FormData();
   form.append("model", MODEL);
   form.append("prompt", promptText);
   form.append("size", sizeOverride || IMAGE_SIZE);
-  form.append("quality", "low");
+  form.append("quality", quality);
   form.append("n", "1");
+
   form.append("image", new Blob([imageBytes], { type: "image/png" }), "input.png");
 
   const r = await fetch("https://api.openai.com/v1/images/edits", {
@@ -139,7 +140,9 @@ Deno.serve(async (req) => {
     const batchId = body?.batch_id as string | undefined;
     const imageIds = Array.isArray(body?.image_ids) ? (body.image_ids as string[]) : null;
     const mode = (body?.mode === "watermark_only" ? "watermark_only" : "enhance") as "enhance" | "watermark_only";
+    const quality = (body?.quality === "medium" ? "medium" : "low") as "low" | "medium";
     const activePrompt = mode === "watermark_only" ? WATERMARK_ONLY_PROMPT : PROMPT;
+
 
     // Fluxo 2: lote de upload avulso ------------------------------------------------
     if (batchId) {
@@ -166,7 +169,8 @@ Deno.serve(async (req) => {
           if (dlErr || !dl) throw new Error(dlErr?.message || "Falha ao baixar original do storage");
           const srcBytes = new Uint8Array(await dl.arrayBuffer());
           const sizeArg = mode === "watermark_only" ? pickSizeForOriginal(srcBytes) : IMAGE_SIZE;
-          const bytes = await callOpenAiImageEdit(srcBytes, activePrompt, sizeArg);
+          const bytes = await callOpenAiImageEdit(srcBytes, activePrompt, sizeArg, quality);
+
           const path = `${userId}/uploads/${batchId}/enhanced/${img.id}.png`;
           const { error: upErr } = await admin.storage.from(BUCKET).upload(path, bytes, { contentType: "image/png", upsert: true });
           if (upErr) throw new Error(upErr.message);
@@ -193,7 +197,7 @@ Deno.serve(async (req) => {
           type: mode === "watermark_only" ? "remove_watermark_upload" : "enhance_upload",
           status: "done",
           message: `enhance batch (${mode}): ${results.filter(r => r.ok).length}/${results.length}`,
-          metadata_json: { model: MODEL, mode, batch_id: batchId, results },
+          metadata_json: { model: MODEL, mode, quality, batch_id: batchId, results },
         });
       } catch { /* noop */ }
 
@@ -231,7 +235,8 @@ Deno.serve(async (req) => {
         if (!srcBytes) throw new Error("Falha ao baixar imagem original");
 
         const sizeArg = mode === "watermark_only" ? pickSizeForOriginal(srcBytes) : IMAGE_SIZE;
-        let bytes = await callOpenAiImageEdit(srcBytes, activePrompt, sizeArg);
+        let bytes = await callOpenAiImageEdit(srcBytes, activePrompt, sizeArg, quality);
+
 
         const whiteBars = false;
         const retried = false;
@@ -273,8 +278,9 @@ Deno.serve(async (req) => {
         listing_id: listingId,
         type: mode === "watermark_only" ? "remove_watermark" : "enhance_images",
         status: "done",
-        message: `enhance-listing-images (${MODEL}, mode=${mode}): ${results.filter(r => r.ok).length}/${results.length} sucesso`,
-        metadata_json: { model: MODEL, mode, results },
+        message: `enhance-listing-images (${MODEL}, mode=${mode}, quality=${quality}): ${results.filter(r => r.ok).length}/${results.length} sucesso`,
+        metadata_json: { model: MODEL, mode, quality, results },
+
       });
     } catch { /* noop */ }
 

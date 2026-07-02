@@ -25,10 +25,8 @@ import { ImageLightbox } from "@/components/ImageLightbox";
 import { deleteListing } from "@/lib/delete-listing";
 import { deleteListingImage } from "@/lib/delete-listing-image";
 import { downloadEnhanced, downloadEnhancedZip, getEnhancedSignedUrl } from "@/lib/enhanced-images";
+import { QualityPicker, QUALITY_COST_USD, type EnhanceQuality } from "@/components/QualityPicker";
 
-// Custo aproximado por imagem: OpenAI gpt-image-1, quality=high, size=1536x1024.
-// Referência: tabela pública OpenAI (~US$ 0,19/imagem em high nessa resolução).
-const COST_PER_IMAGE_USD = 0.02;
 
 export const Route = createFileRoute("/_authenticated/listings/$id")({
   head: () => ({ meta: [{ title: "Detalhes do anúncio" }] }),
@@ -154,11 +152,11 @@ function ListingDetail() {
   const [enhanceProgress, setEnhanceProgress] = useState<{ done: number; total: number } | null>(null);
   const [enhancingIds, setEnhancingIds] = useState<Set<string>>(new Set());
 
-  const enhanceOne = useCallback(async (imageId: string, mode: "enhance" | "watermark_only" = "enhance") => {
+  const enhanceOne = useCallback(async (imageId: string, mode: "enhance" | "watermark_only" = "enhance", quality: EnhanceQuality = "low") => {
     setEnhancingIds((prev) => { const n = new Set(prev); n.add(imageId); return n; });
     try {
       const { data, error } = await supabase.functions.invoke("enhance-listing-images", {
-        body: { listing_id: id, image_ids: [imageId], mode },
+        body: { listing_id: id, image_ids: [imageId], mode, quality },
       });
       if (error) throw error;
       const r = (data as { results?: Array<{ ok: boolean; error?: string }> })?.results?.[0];
@@ -171,6 +169,7 @@ function ListingDetail() {
       setEnhancingIds((prev) => { const n = new Set(prev); n.delete(imageId); return n; });
     }
   }, [id, load]);
+
 
   const [deletingImageIds, setDeletingImageIds] = useState<Set<string>>(new Set());
   const removeImage = useCallback(async (imageId: string) => {
@@ -187,7 +186,7 @@ function ListingDetail() {
     }
   }, [load]);
 
-  const enhance = useCallback(async (mode: "enhance" | "watermark_only" = "enhance") => {
+  const enhance = useCallback(async (mode: "enhance" | "watermark_only" = "enhance", quality: EnhanceQuality = "low") => {
     setEnhancing(true);
     setEnhanceProgress(null);
     try {
@@ -212,8 +211,9 @@ function ListingDetail() {
       for (let i = 0; i < queue.length; i += BATCH) {
         const batch = queue.slice(i, i + BATCH);
         const { data, error } = await supabase.functions.invoke("enhance-listing-images", {
-          body: { listing_id: id, image_ids: batch, mode },
+          body: { listing_id: id, image_ids: batch, mode, quality },
         });
+
         if (error) throw error;
         const results = (data as { results?: Array<{ ok: boolean }> })?.results ?? [];
         ok += results.filter((r) => r.ok).length;
@@ -237,6 +237,8 @@ function ListingDetail() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [confirmMode, setConfirmMode] = useState<"enhance" | "watermark_only">("enhance");
+  const [confirmQuality, setConfirmQuality] = useState<EnhanceQuality>("low");
+
 
   const openEnhanceConfirm = useCallback(async (mode: "enhance" | "watermark_only" = "enhance") => {
     const { data: allImgs, error } = await supabase
@@ -635,36 +637,32 @@ function ListingDetail() {
                 <div>
                   <strong>{pendingCount}</strong> foto(s) serão processadas pela OpenAI.
                 </div>
-                <div>
-                  Custo estimado:{" "}
-                  <strong>US$ {(pendingCount * COST_PER_IMAGE_USD).toFixed(2)}</strong>{" "}
-                  <span className="text-muted-foreground">
-                    (~US$ {COST_PER_IMAGE_USD.toFixed(2)} por foto)
-                  </span>
-                </div>
-                {confirmMode === "watermark_only" ? (
+                {confirmMode === "watermark_only" && (
                   <div className="text-muted-foreground">
                     Este modo apaga apenas logos/selos dos portais (OLX, ZAP, Viva Real) e mantém o resto da foto igual — mesma orientação, cores, enquadramento e nitidez.
                   </div>
-                ) : (
-                  <>
-                    <div className="text-muted-foreground">
-                      Modo econômico ativo (qualidade baixa, ~US$ 0,02/foto). O resultado pode ter menos nitidez que no modo alto.
-                    </div>
-                    <div className="text-muted-foreground">
-                      Retratar sobrescreve as fotos já tratadas e gera novo custo.
-                    </div>
-                  </>
                 )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Qualidade da IA</div>
+            <QualityPicker value={confirmQuality} onChange={setConfirmQuality} />
+          </div>
+          <div className="rounded-md bg-muted/40 p-2 text-sm">
+            Custo estimado:{" "}
+            <strong>US$ {(pendingCount * QUALITY_COST_USD[confirmQuality]).toFixed(2)}</strong>{" "}
+            <span className="text-muted-foreground">
+              (~US$ {QUALITY_COST_USD[confirmQuality].toFixed(2)} por foto)
+            </span>
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setConfirmOpen(false); void enhance(confirmMode); }}>
+            <AlertDialogAction onClick={() => { setConfirmOpen(false); void enhance(confirmMode, confirmQuality); }}>
               {confirmMode === "watermark_only" ? "Confirmar e remover" : "Confirmar e tratar"}
             </AlertDialogAction>
           </AlertDialogFooter>
+
         </AlertDialogContent>
       </AlertDialog>
       <ImageLightbox

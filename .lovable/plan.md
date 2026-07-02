@@ -1,36 +1,34 @@
 ## Objetivo
-Deixar as fotos tratadas pela IA com aparência mais **realista** (menos "renderizada"/"catálogo"), mantendo o custo atual (~US$ 0,02/foto, `quality: "low"`).
+Adicionar seletor de qualidade (**Baixa** US$ 0,02/foto ou **Média** US$ 0,07/foto) em todos os fluxos de tratamento por IA, com custo estimado atualizado em tempo real na confirmação.
 
-## Diagnóstico
-Hoje o prompt em `supabase/functions/enhance-listing-images/index.ts` já pede realismo e proíbe render 3D, mas na prática `gpt-image-1` em `low`:
-- suaviza demais texturas (parede, madeira, tecido) → aparência plástica
-- eleva iluminação/contraste → visual de estúdio
-- satura levemente cores → look de revista
+## Backend — `supabase/functions/enhance-listing-images/index.ts`
 
-## Mudanças propostas (só no prompt `PROMPT` — modo "Tratar completo")
+1. Aceitar novo parâmetro `quality: "low" | "medium"` (default `"low"` para retrocompatibilidade) no payload.
+2. Repassar `quality` para a chamada do `gpt-image-1` da OpenAI (hoje fixo em `"low"`).
+3. Aplicar tanto no modo `enhance` quanto no `watermark_only`.
+4. Persistir a qualidade escolhida em `photo_batches` e/ou `listing_images` (nova coluna `enhance_quality text`) para exibir no histórico e permitir reprocessar com a mesma qualidade.
 
-Reforçar a seção de realismo com regras mais duras e exemplos negativos explícitos:
+## Banco — migração
+- Adicionar coluna `enhance_quality text default 'low'` em `photo_batches` e `listing_images` (ou `photo_batch_images`).
 
-1. **Textura preservada** — obrigar manutenção de poros de parede, veios de madeira, trama de tecido, imperfeições de piso, marcas de uso. Proibir "smoothing", superfícies "limpas demais", aparência de cerâmica/plástico.
-2. **Iluminação natural intocada** — manter a luz da foto original (temperatura, direção, intensidade). Proibir realce de janelas, "golden hour" artificial, preenchimento de sombras, HDR, halos.
-3. **Cores fiéis** — manter saturação e balanço de branco originais; permitida apenas correção sutil se a foto estiver visivelmente amarelada/azulada. Proibir cores "vivas", céu mais azul, verde de plantas realçado.
-4. **Ruído fotográfico preservado** — manter o grão original da câmera/celular; não aplicar denoise agressivo.
-5. **Referência mental explícita** — instruir o modelo a mirar em "foto de celular de corretor de imóveis" e não em "foto profissional de catálogo/Airbnb Plus/render de arquitetura".
-6. **Lista negativa ampliada** — proibir explicitamente: look Airbnb Plus, render Lumion/V-Ray/Enscape, staging virtual, aparência de e-commerce, brilho especular exagerado em pisos, reflexos irreais em vidros/TVs.
+## Frontend
 
-Manter intactas as regras já existentes de:
-- geometria/linhas retas (não regride nada do último ajuste)
-- nitidez total (sem blur/bokeh)
-- remoção de marca d'água com reconstrução fotorrealista
-- saída horizontal 3:2 com outpainting quando vertical
+Componente novo `src/components/QualityPicker.tsx` (RadioGroup) reutilizado em todos os pontos:
+- **Baixa** — US$ 0,02/foto — rápida, pode deformar linhas retas
+- **Média** — US$ 0,07/foto — geometria preservada, ~3,5× mais cara
 
-O modo `WATERMARK_ONLY_PROMPT` **não muda** (ele já preserva o original 1:1).
+Locais que ganham o seletor + cálculo dinâmico no diálogo de confirmação:
 
-## Arquivo alterado
-- `supabase/functions/enhance-listing-images/index.ts` — reescrever a constante `PROMPT` com as regras acima; deploy da função.
+1. `src/routes/_authenticated/tools.enhance.new.tsx` — escolha antes de criar o lote.
+2. `src/routes/_authenticated/tools.enhance.$id.tsx` — seletor no botão "Retratar lote" e nas ações por foto (Tratar/Retratar/Marca).
+3. `src/routes/_authenticated/listings.$id.tsx` — seletor nos AlertDialogs de:
+   - Tratar todas / Retratar todas
+   - Remover marca d'água em lote
+   - Ações individuais por foto (Tratar, Marca)
 
-## Como testar
-Após deploy, clicar **Retratar** em 1–2 fotos que ficaram com cara de render e comparar com o original.
+O custo estimado no diálogo passa a ser `nºfotos × (0.02 | 0.07)` conforme a escolha.
 
-## Custo
-Sem alteração — segue `quality: "low"` a ~US$ 0,02/foto. Se mesmo assim o resultado continuar "renderizado", o próximo passo (fora deste plano) seria subir para `quality: "medium"` (~US$ 0,07/foto), o que exige aprovação explícita por causa do custo.
+## Fora de escopo
+- Qualidade `high` (US$ 0,19) — pode entrar depois se pedido.
+- Cobrança/limite por usuário.
+- Alteração dos prompts atuais.
