@@ -413,6 +413,49 @@ function ListingDetail() {
               )}
             </div>
           )}
+          {hasImages && selectionMode && (() => {
+            const selectableIds = images.filter((i) => i.original_external_url).map((i) => i.id);
+            const selCount = selectedIds.size;
+            const allSelected = selCount > 0 && selCount === selectableIds.length;
+            return (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium">{selCount} selecionada(s)</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setSelectedIds(allSelected ? new Set() : new Set(selectableIds))}
+                  disabled={enhancing || selectableIds.length === 0}
+                >
+                  {allSelected ? "Limpar seleção" : "Selecionar todas"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => openEnhanceConfirm("watermark_only", Array.from(selectedIds))}
+                  disabled={enhancing || selCount === 0}
+                >
+                  <Eraser className="mr-2 h-4 w-4" />
+                  Remover marca ({selCount})
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => openEnhanceConfirm("enhance", Array.from(selectedIds))}
+                  disabled={enhancing || selCount === 0}
+                >
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Tratar selecionadas ({selCount})
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
+                  disabled={enhancing}
+                >
+                  <X className="mr-2 h-4 w-4" /> Cancelar
+                </Button>
+              </div>
+            );
+          })()}
         </CardHeader>
         <CardContent>
           {!hasImages ? (
