@@ -87,11 +87,11 @@ function BatchDetail() {
 
   const doneList = useMemo(() => imgs.filter((i) => i.enhanced_storage_path && i.enhancement_status === "done"), [imgs]);
 
-  const processOne = useCallback(async (imageId: string, mode: "enhance" | "watermark_only") => {
+  const processOne = useCallback(async (imageId: string, mode: "enhance" | "watermark_only", q: EnhanceQuality) => {
     setBusyIds((p) => { const n = new Set(p); n.add(imageId); return n; });
     try {
       const { data, error } = await supabase.functions.invoke("enhance-listing-images", {
-        body: { batch_id: id, image_ids: [imageId], mode },
+        body: { batch_id: id, image_ids: [imageId], mode, quality: q },
       });
       if (error) throw error;
       const r = (data as { results?: Array<{ ok: boolean; error?: string }> })?.results?.[0];
@@ -105,17 +105,16 @@ function BatchDetail() {
     }
   }, [id, load]);
 
-  const reprocessAll = useCallback(async (mode: "enhance" | "watermark_only") => {
+  const reprocessAll = useCallback(async (mode: "enhance" | "watermark_only", q: EnhanceQuality) => {
     const ids = imgs.map((i) => i.id);
     if (ids.length === 0) return;
-    if (!window.confirm(`Reprocessar ${ids.length} foto(s)? Custo estimado: US$ ${(ids.length * COST).toFixed(2)}`)) return;
     setProcessing(true);
     try {
       const BATCH = 2;
       for (let i = 0; i < ids.length; i += BATCH) {
         const chunk = ids.slice(i, i + BATCH);
         const { error } = await supabase.functions.invoke("enhance-listing-images", {
-          body: { batch_id: id, image_ids: chunk, mode },
+          body: { batch_id: id, image_ids: chunk, mode, quality: q },
         });
         if (error) throw error;
         await load();
@@ -127,6 +126,26 @@ function BatchDetail() {
       setProcessing(false);
     }
   }, [id, imgs, load]);
+
+  const openConfirm = (mode: "enhance" | "watermark_only", scope: { kind: "all" } | { kind: "one"; imageId: string }) => {
+    setConfirmMode(mode);
+    setConfirmScope(scope);
+    setQuality("low");
+    setConfirmOpen(true);
+  };
+
+  const confirmCount = confirmScope.kind === "one" ? 1 : imgs.length;
+  const confirmCost = (confirmCount * QUALITY_COST_USD[quality]).toFixed(2);
+
+  const runConfirmed = () => {
+    setConfirmOpen(false);
+    if (confirmScope.kind === "one") {
+      void processOne(confirmScope.imageId, confirmMode, quality);
+    } else {
+      void reprocessAll(confirmMode, quality);
+    }
+  };
+
 
   const removeImg = async (imageId: string) => {
     if (!window.confirm("Excluir esta foto do lote?")) return;
