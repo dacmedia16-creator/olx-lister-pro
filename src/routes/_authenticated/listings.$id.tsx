@@ -237,6 +237,8 @@ function ListingDetail() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [confirmMode, setConfirmMode] = useState<"enhance" | "watermark_only">("enhance");
+  const [confirmQuality, setConfirmQuality] = useState<EnhanceQuality>("low");
+
 
   const openEnhanceConfirm = useCallback(async (mode: "enhance" | "watermark_only" = "enhance") => {
     const { data: allImgs, error } = await supabase
