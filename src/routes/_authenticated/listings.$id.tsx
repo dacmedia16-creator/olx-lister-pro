@@ -505,22 +505,15 @@ function ListingDetail() {
                           </div>
                         )}
 
-                        {isEnhanced && (
-                          <button
-                            type="button"
-                            onClick={() => downloadEnhanced(im.enhanced_storage_path!, `foto-${String(idx + 1).padStart(2, "0")}.png`)}
-                            className="absolute inset-x-1 bottom-1 flex items-center justify-center gap-1 rounded bg-black/70 px-1 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100"
-                          >
-                            <Download className="h-3 w-3" /> Baixar
-                          </button>
-                        )}
                       </div>
                     );
                   })}
                 </div>
+                </>
               )}
             </div>
           )}
+
         </CardContent>
       </Card>
 
