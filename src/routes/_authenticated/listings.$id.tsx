@@ -750,7 +750,7 @@ function ListingDetail() {
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setConfirmOpen(false); void enhance(confirmMode, confirmQuality); }}>
+            <AlertDialogAction onClick={() => { setConfirmOpen(false); void enhance(confirmMode, confirmQuality, confirmIds ?? undefined); }}>
               {confirmMode === "watermark_only" ? "Confirmar e remover" : "Confirmar e tratar"}
             </AlertDialogAction>
           </AlertDialogFooter>
