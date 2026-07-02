@@ -248,18 +248,26 @@ function ListingDetail() {
   const [pendingCount, setPendingCount] = useState(0);
   const [confirmMode, setConfirmMode] = useState<"enhance" | "watermark_only">("enhance");
   const [confirmQuality, setConfirmQuality] = useState<EnhanceQuality>("low");
+  const [confirmIds, setConfirmIds] = useState<string[] | null>(null);
 
 
-  const openEnhanceConfirm = useCallback(async (mode: "enhance" | "watermark_only" = "enhance") => {
-    const { data: allImgs, error } = await supabase
-      .from("listing_images")
-      .select("id,original_external_url")
-      .eq("listing_id", id);
-    if (error) {
-      toast.error("Falha ao contar fotos");
-      return;
+  const openEnhanceConfirm = useCallback(async (mode: "enhance" | "watermark_only" = "enhance", overrideIds?: string[]) => {
+    let count: number;
+    if (overrideIds && overrideIds.length > 0) {
+      count = overrideIds.length;
+      setConfirmIds(overrideIds);
+    } else {
+      const { data: allImgs, error } = await supabase
+        .from("listing_images")
+        .select("id,original_external_url")
+        .eq("listing_id", id);
+      if (error) {
+        toast.error("Falha ao contar fotos");
+        return;
+      }
+      count = (allImgs ?? []).filter((i: any) => i.original_external_url).length;
+      setConfirmIds(null);
     }
-    const count = (allImgs ?? []).filter((i: any) => i.original_external_url).length;
     if (count === 0) {
       toast.error("Nenhuma foto disponível para processar");
       return;
