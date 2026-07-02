@@ -252,12 +252,13 @@ function BatchDetail() {
                     </div>
                     {im.error_message && <p className="mt-1 text-[11px] text-destructive">{im.error_message}</p>}
                     <div className="mt-2 flex flex-wrap gap-1">
-                      <Button size="sm" variant="outline" onClick={() => processOne(im.id, "enhance")} disabled={isBusy || processing}>
+                      <Button size="sm" variant="outline" onClick={() => openConfirm("enhance", { kind: "one", imageId: im.id })} disabled={isBusy || processing}>
                         <Sparkles className="mr-1 h-3 w-3" /> Tratar
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => processOne(im.id, "watermark_only")} disabled={isBusy || processing}>
+                      <Button size="sm" variant="outline" onClick={() => openConfirm("watermark_only", { kind: "one", imageId: im.id })} disabled={isBusy || processing}>
                         <Eraser className="mr-1 h-3 w-3" /> Marca
                       </Button>
+
                       {eUrl && (
                         <Button size="sm" variant="secondary" onClick={() => downloadEnhanced(im.enhanced_storage_path!, `foto-${String(idx + 1).padStart(2, "0")}.png`)}>
                           <Download className="mr-1 h-3 w-3" /> Baixar
