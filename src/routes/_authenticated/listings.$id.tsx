@@ -20,6 +20,8 @@ import { toast } from "sonner";
 import { formatBRL, formatDate } from "@/lib/olx";
 import { HashBadge } from "@/components/HashBadge";
 import { OlxImageCarousel } from "@/components/OlxImageCarousel";
+import { ImageLightbox } from "@/components/ImageLightbox";
+
 import { deleteListing } from "@/lib/delete-listing";
 import { deleteListingImage } from "@/lib/delete-listing-image";
 import { downloadEnhanced, downloadEnhancedZip, getEnhancedSignedUrl } from "@/lib/enhanced-images";
