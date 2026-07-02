@@ -235,7 +235,8 @@ Deno.serve(async (req) => {
         if (!srcBytes) throw new Error("Falha ao baixar imagem original");
 
         const sizeArg = mode === "watermark_only" ? pickSizeForOriginal(srcBytes) : IMAGE_SIZE;
-        let bytes = await callOpenAiImageEdit(srcBytes, activePrompt, sizeArg);
+        let bytes = await callOpenAiImageEdit(srcBytes, activePrompt, sizeArg, quality);
+
 
         const whiteBars = false;
         const retried = false;
