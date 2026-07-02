@@ -66,7 +66,7 @@ function collectIdCandidates(...values: unknown[]): string[] {
 }
 
 function getAdIds(ad: any): string[] {
-  return collectIdCandidates(
+  const direct = collectIdCandidates(
     ad?.listingId,
     ad?.listing_id,
     ad?.listId,
@@ -77,7 +77,21 @@ function getAdIds(ad: any): string[] {
     ad?.code,
     ad?.legacyId,
     ad?.legacy_id,
+    ad?.externalId,
+    ad?.external_id,
+    ad?.sourceId,
+    ad?.source_id,
   );
+  // Fallback: varredura rasa dos campos string para pegar ID numérico que a GeckoAPI às vezes
+  // esconde em link/sourceUrl/href/canonicalUrl do card.
+  const extra: string[] = [];
+  if (ad && typeof ad === "object") {
+    const strFields = [ad?.url, ad?.link, ad?.href, ad?.shareUrl, ad?.canonicalUrl, ad?.sourceUrl, ad?.detailUrl];
+    for (const v of strFields) {
+      if (typeof v === "string") extra.push(...collectIdCandidates(v));
+    }
+  }
+  return Array.from(new Set([...direct, ...extra]));
 }
 
 function getUrlIds(raw: string | null | undefined): string[] {
@@ -222,14 +236,23 @@ function getZapKeyword(listingRoot?: any, title?: string | null): string | null 
 
 function parseZapAddressFallback(listingRoot?: any): { city: string | null; state: string | null; neighborhood: string | null } {
   const formatted = String(listingRoot?.formattedAddress ?? "");
-  const match = formatted.match(/([^,\-]+)\s*-\s*([A-Z]{2})(?:\b|,)/i);
-  const beforeCity = formatted.split(",")[0] ?? "";
-  const neighborhood = beforeCity.includes(" - ") ? beforeCity.split(" - ").pop()?.trim() : null;
-  return {
-    city: match?.[1]?.trim() || null,
-    state: match?.[2]?.toUpperCase() || null,
-    neighborhood: neighborhood || null,
-  };
+  // Ex.: "Avenida X, 1893 - Jardim Sao Carlos, Sorocaba - SP"
+  const parts = formatted.split(",").map((p) => p.trim()).filter(Boolean);
+  const cityStateMatch = formatted.match(/([^,\-]+?)\s*-\s*([A-Z]{2})(?:\b|,|$)/i);
+  const city = cityStateMatch?.[1]?.trim() || null;
+  const state = cityStateMatch?.[2]?.toUpperCase() || null;
+
+  // Bairro: penúltimo segmento (antes de "Cidade - UF"), removendo prefixo "... - "
+  let neighborhood: string | null = null;
+  if (parts.length >= 2) {
+    const candidate = parts[parts.length - 2];
+    neighborhood = candidate.includes(" - ") ? (candidate.split(" - ").pop()?.trim() ?? null) : candidate;
+  } else if (parts.length === 1 && parts[0].includes(" - ")) {
+    neighborhood = parts[0].split(" - ").pop()?.trim() ?? null;
+  }
+  if (neighborhood && city && neighborhood.toLowerCase() === city.toLowerCase()) neighborhood = null;
+
+  return { city, state, neighborhood: neighborhood || null };
 }
 
 function numberFromText(raw: unknown, re: RegExp): number | null {
@@ -300,6 +323,7 @@ function buildPlpPayloads(portal: Portal, plpUrl: string, sourceUrl: string, lis
   const addressFallback = parseZapAddressFallback(listingRoot);
   const city = listingRoot?.address?.city ?? addressFallback.city;
   const state = listingRoot?.address?.stateAcronym ?? listingRoot?.address?.state ?? addressFallback.state;
+  const neighborhood = listingRoot?.address?.neighborhood ?? addressFallback.neighborhood;
   if (!city || !state) return [];
 
   const base: Record<string, any> = {
@@ -308,40 +332,63 @@ function buildPlpPayloads(portal: Portal, plpUrl: string, sourceUrl: string, lis
     city: String(city),
     state: String(state).slice(0, 2).toUpperCase(),
     businessType: getZapBusinessType(listingRoot, sourceUrl),
+    sort: "updated_desc",
   };
   const keyword = getZapKeyword(listingRoot, title);
   const area = getZapArea(listingRoot, title);
   const bedrooms = getZapBedroomCount(listingRoot, title);
   const latLng = getZapLatLng(listingRoot);
+  const price = getZapPrice(listingRoot);
   const sourceIds = getMatchInfo(sourceUrl, listingRoot).ids;
   const numericId = Array.from(sourceIds).find((id) => /^\d{8,}$/.test(id));
 
-  const filters: Record<string, any> = {
-    ...(bedrooms ? { bedrooms: [bedrooms] } : {}),
-  };
+  const priceBand = price ? { priceMin: Math.floor(price * 0.85), priceMax: Math.ceil(price * 1.15) } : {};
 
   const payloads: Record<string, any>[] = [];
-  if (numericId) pushUniquePayload(payloads, { ...base, keyword: numericId, page: 1 });
-  if (latLng) for (let page = 1; page <= 3; page++) pushUniquePayload(payloads, { ...base, ...latLng, page });
 
-  // O ZAP às vezes não retorna fotos no PDP, mas a PLP traz as imagens do card.
-  // Para não pegar foto errada, varremos páginas com filtro leve de quartos e fazemos match por ID/URL.
+  // 1) Tentativas mais precisas primeiro: id numérico como keyword.
+  if (numericId) {
+    pushUniquePayload(payloads, { ...base, keyword: numericId, page: 1 });
+    if (neighborhood) pushUniquePayload(payloads, { ...base, neighborhood: String(neighborhood), keyword: numericId, page: 1 });
+  }
+
+  // 2) Bairro + quartos + faixa de preço reduz drasticamente o universo.
+  if (neighborhood) {
+    for (let page = 1; page <= 3; page++) {
+      pushUniquePayload(payloads, { ...base, neighborhood: String(neighborhood), ...(bedrooms ? { bedrooms: [bedrooms] } : {}), ...priceBand, page });
+    }
+  }
+
+  // 3) Lat/Long (quando disponível).
+  if (latLng) {
+    for (let page = 1; page <= 3; page++) pushUniquePayload(payloads, { ...base, ...latLng, ...(bedrooms ? { bedrooms: [bedrooms] } : {}), page });
+  }
+
+  // 4) Cidade inteira com filtros — pageLimit ampliado para achar anúncios recém-listados.
+  const filters: Record<string, any> = { ...(bedrooms ? { bedrooms: [bedrooms] } : {}) };
   const pageLimit = bedrooms ? 12 : 6;
   for (let page = 1; page <= pageLimit; page++) {
-    if (Object.keys(filters).length > 0) pushUniquePayload(payloads, { ...base, ...filters, page });
-    else pushUniquePayload(payloads, { ...base, page });
+    if (Object.keys(filters).length > 0) pushUniquePayload(payloads, { ...base, ...filters, ...priceBand, page });
+    else pushUniquePayload(payloads, { ...base, ...priceBand, page });
   }
 
   if (area && !bedrooms) {
     for (let page = 1; page <= 4; page++) pushUniquePayload(payloads, { ...base, areaMin: Math.max(0, area - 20), areaMax: area + 20, page });
   }
 
-  // Keyword textual no ZAP pode zerar resultados em alguns casos; por isso fica por último.
+  // 5) Keyword textual composta (bairro + quartos + área) como último recurso.
+  const composed: string[] = [];
+  if (bedrooms) composed.push(`${bedrooms} quartos`);
+  if (neighborhood) composed.push(String(neighborhood));
+  if (area) composed.push(`${area}m2`);
+  if (composed.length >= 2) {
+    for (let page = 1; page <= 2; page++) pushUniquePayload(payloads, { ...base, keyword: composed.join(" "), page });
+  }
   if (keyword) {
     for (let page = 1; page <= 2; page++) pushUniquePayload(payloads, { ...base, keyword, page });
   }
 
-  return payloads.slice(0, 18);
+  return payloads.slice(0, 24);
 }
 
 function derivePlpFallbackUrls(sourceUrl: string, listingRoot?: any, title?: string | null, portal: Portal = "olx"): string[] {

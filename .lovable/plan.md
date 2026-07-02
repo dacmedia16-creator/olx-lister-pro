@@ -1,31 +1,41 @@
-## Objetivo
-Adicionar um botão separado "Remover marca d'água" que trata as fotos apenas para apagar logos/selos dos portais (OLX, ZAP, Viva Real), sem aplicar o tratamento completo de melhoria (nitidez, exposição, outpainting horizontal etc.). Assim o usuário pode escolher entre:
-- **Tratar foto** (atual): melhoria completa + remoção de marca d'água + horizontal 3:2.
-- **Remover marca d'água** (novo): apenas remove a logo, preservando 100% do resto da foto e do formato original.
+## Por que o anúncio do ZAP não trouxe fotos
 
-## Mudanças
+Fui atrás do que aconteceu na última importação (`https://www.zapimoveis.com.br/imovel/...-id-2895954575/`) e confirmei nos logs e no banco:
 
-### 1. Edge Function `enhance-listing-images`
-- Aceitar novo parâmetro opcional no body: `mode: "enhance" | "watermark_only"` (default `"enhance"` para não quebrar o fluxo atual).
-- Quando `mode === "watermark_only"`:
-  - Usar um prompt enxuto focado só em apagar logo/selo/marca d'água/texto sobreposto de OLX, OLX Brasil, ZAP, ZAP Imóveis, Viva Real, reconstruindo fotorrealisticamente a área coberta, sem alterar nada mais na cena (sem mexer em exposição, cor, nitidez, enquadramento).
-  - Manter `quality: "low"` e `model: gpt-image-1` (mesmo custo de ~US$ 0,02/foto, respeitando o limite atual).
-  - **Não** forçar `size=1536x1024`: detectar o aspect ratio da imagem original via header (PNG/JPEG) e escolher o `size` suportado mais próximo (`1024x1024`, `1536x1024` ou `1024x1536`) para preservar a orientação original.
-  - Registrar em `processing_logs` com `type: "remove_watermark"` para separar do enhance normal.
-- Salvar o resultado no mesmo caminho `enhanced/{listingId}/{imageId}.png` e marcar `enhancement_status = 'done'` (reaproveita a UI de "foto tratada", download e ZIP existentes).
+- O PDP do ZAP na GeckoAPI voltou com título/descrição, mas **sem nenhuma imagem** (`images_source = "none"`, 0 imagens em `listing_images`).
+- A Edge Function tentou o fallback PLP do ZAP várias vezes (dá pra ver os `plp-image-fallback-zap attempt=1 status=200` nos logs), mas nenhum resultado bateu com o anúncio → registrei `warning: "GeckoAPI retornou 0 imagens em PDP e fallback PLP"`.
 
-### 2. Frontend — tela de detalhes `src/routes/_authenticated/listings.$id.tsx`
-- Adicionar um segundo botão em lote no topo da galeria: **"Remover marca d'água"** ao lado do atual "Tratar fotos".
-  - Diálogo de confirmação separado com estimativa (qtd fotos × US$ 0,02) e texto deixando claro que só remove logo.
-  - Chama `enhance-listing-images` passando `mode: "watermark_only"` e mesmo mecanismo de lote (`remaining_ids`).
-- Em cada miniatura, adicionar um botão/ícone extra **"Só marca d'água"** ao lado do "Tratar/Retratar" individual, chamando a função com `mode: "watermark_only"` e o `image_ids` correspondente.
-- Não alterar layout geral, cores ou tokens — só acrescentar os botões usando os componentes shadcn existentes (`Button`, `AlertDialog`, ícone Lucide `Eraser` ou `Sparkles`).
+Ou seja, **não é bug do storage nem do frontend** — a GeckoAPI simplesmente não devolveu foto pra esse anúncio, e o fallback PLP não conseguiu casar. Motivos combinados:
 
-### 3. Sem mudanças
-- Banco de dados: nenhuma migração (reutiliza colunas atuais de `listing_images`).
-- Bucket, custo máximo (US$ 0,02), limite de 40 fotos, fluxo de OLX/ZAP, download individual e ZIP: tudo inalterado.
+1. **PDP do ZAP** frequentemente vem sem galeria (limitação da própria GeckoAPI documentada — os campos `images/photos/media` chegam vazios).
+2. **PLP do ZAP** exige `city + state + businessType`. O PDP devolveu `address.city = null / stateAcronym = null`, então dependemos do parser do `formattedAddress` ("... Sorocaba - SP"). Ele extrai `Sorocaba/SP`, mas a busca PLP resultante lista **os anúncios em destaque de Sorocaba**, e o `id 2895954575` provavelmente não apareceu nas primeiras páginas varridas → o match exige `score >= 45` com `id/url/slug`, então é descartado.
+3. Sem match, a função preserva as imagens anteriores (que nesse caso eram zero) e finaliza como sucesso, mas sem foto.
+
+## O que proponho corrigir
+
+Mudanças focadas em aumentar a taxa de acerto do fallback PLP do ZAP, sem tocar em OLX, storage, IA ou UI de detalhes.
+
+### Edge Function `import-olx-listing`
+
+1. **Endurecer o parser de endereço do ZAP** (`parseZapAddressFallback`)
+   - Já pega city/state; adicionar extração do bairro real (o texto antes de "Sorocaba" na 2ª vírgula) e usar como `neighborhood` no payload PLP para reduzir o universo de resultados.
+2. **Payloads PLP mais precisos**
+   - Além de `city+state+businessType`, incluir variações com `neighborhood`, `bedrooms` (extraído do título "3 quartos") e faixa de preço (±15% quando houver preço) — hoje já removemos filtros de banheiros/vagas, mas quartos + bairro reduzem drasticamente o ruído.
+   - Ordenar por `updated_desc` para pegar o anúncio recém-listado (o do exemplo é de 30/06).
+3. **Match mais tolerante**
+   - Aceitar match por `listing_id` presente em qualquer campo string do item (hoje só varremos alguns campos conhecidos); a GeckoAPI às vezes coloca o id só dentro de `link`/`url`/`sourceUrl`.
+   - Aceitar match por **slug do imóvel** (parte do path com bairro + tipo) além do id numérico.
+4. **Segunda tentativa: buscar direto o anúncio na PLP por `keyword` = título completo + bairro**
+   - Novo payload extra quando os anteriores não acharem: PLP com `keyword` = "3 quartos Jardim Sao Carlos 102m2" (montado a partir de bairro + quartos + área extraídos do título).
+5. **Log detalhado**
+   - Salvar em `processing_logs` o `attempts` do fallback (URL PLP, payload, item_count, top scores) para conseguir depurar sem precisar reimportar.
+
+### Sem mudanças
+
+- Não mexer em OLX, `enhance-listing-images`, storage, UI de detalhes/galeria, migrations, secrets, custo de IA.
+- Não trocar de provedor (GeckoAPI continua) — se mesmo com essas melhorias o anúncio continuar sem foto, é limitação real do provider e o log detalhado vai deixar isso explícito.
 
 ## Fora de escopo
-- Não vou trocar de modelo de IA nem mudar qualidade.
-- Não vou alterar o prompt do enhance completo já existente.
-- Não vou mexer em importação, listagem, dashboard ou detecção de portal.
+- Extrair fotos direto do site do ZAP (scraping próprio).
+- Alterar layout ou fluxo do frontend.
+- Reimportar automaticamente anúncios antigos — depois do deploy, basta clicar de novo em "Importar" no anúncio do ZAP que deu ruim.
