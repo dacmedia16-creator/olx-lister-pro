@@ -22,12 +22,14 @@ const MAX_SIZE = 15 * 1024 * 1024;
 function NewBatch() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<"enhance" | "watermark_only">("enhance");
+  const [quality, setQuality] = useState<EnhanceQuality>("low");
   const [name, setName] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
 
   const onPick = useCallback((list: FileList | null) => {
     if (!list) return;
