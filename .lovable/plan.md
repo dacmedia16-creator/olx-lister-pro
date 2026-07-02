@@ -1,34 +1,19 @@
-## Objetivo
-Adicionar seletor de qualidade (**Baixa** US$ 0,02/foto ou **Média** US$ 0,07/foto) em todos os fluxos de tratamento por IA, com custo estimado atualizado em tempo real na confirmação.
+Adicionar botões **Tratar** e **Remover marca** em cada card da tela "Anúncios importados" (`/listings`), reaproveitando o mesmo diálogo de qualidade Baixa/Média já usado na tela de detalhes.
 
-## Backend — `supabase/functions/enhance-listing-images/index.ts`
+## Comportamento
+- Cada card ganha dois botões pequenos sobre a imagem (ao lado do botão de excluir): ✨ Tratar e 🩹 Marca.
+- Clicar abre um `AlertDialog` com:
+  - Contagem de fotos daquele anúncio que serão processadas.
+  - `QualityPicker` (Baixa ~US$ 0,02 · Média ~US$ 0,07).
+  - Custo total estimado calculado dinamicamente.
+  - Botões Cancelar / Confirmar.
+- Ao confirmar, invoca `enhance-listing-images` em lotes de 2, passando `listing_id`, `mode` (`enhance` ou `watermark_only`) e `quality`.
+- Toast de progresso e resultado (ok/total).
+- Enquanto processa aquele card, botões ficam desabilitados e mostra spinner discreto.
 
-1. Aceitar novo parâmetro `quality: "low" | "medium"` (default `"low"` para retrocompatibilidade) no payload.
-2. Repassar `quality` para a chamada do `gpt-image-1` da OpenAI (hoje fixo em `"low"`).
-3. Aplicar tanto no modo `enhance` quanto no `watermark_only`.
-4. Persistir a qualidade escolhida em `photo_batches` e/ou `listing_images` (nova coluna `enhance_quality text`) para exibir no histórico e permitir reprocessar com a mesma qualidade.
-
-## Banco — migração
-- Adicionar coluna `enhance_quality text default 'low'` em `photo_batches` e `listing_images` (ou `photo_batch_images`).
-
-## Frontend
-
-Componente novo `src/components/QualityPicker.tsx` (RadioGroup) reutilizado em todos os pontos:
-- **Baixa** — US$ 0,02/foto — rápida, pode deformar linhas retas
-- **Média** — US$ 0,07/foto — geometria preservada, ~3,5× mais cara
-
-Locais que ganham o seletor + cálculo dinâmico no diálogo de confirmação:
-
-1. `src/routes/_authenticated/tools.enhance.new.tsx` — escolha antes de criar o lote.
-2. `src/routes/_authenticated/tools.enhance.$id.tsx` — seletor no botão "Retratar lote" e nas ações por foto (Tratar/Retratar/Marca).
-3. `src/routes/_authenticated/listings.$id.tsx` — seletor nos AlertDialogs de:
-   - Tratar todas / Retratar todas
-   - Remover marca d'água em lote
-   - Ações individuais por foto (Tratar, Marca)
-
-O custo estimado no diálogo passa a ser `nºfotos × (0.02 | 0.07)` conforme a escolha.
-
-## Fora de escopo
-- Qualidade `high` (US$ 0,19) — pode entrar depois se pedido.
-- Cobrança/limite por usuário.
-- Alteração dos prompts atuais.
+## Detalhes técnicos
+- Arquivo a editar: `src/routes/_authenticated/listings.index.tsx`.
+- Reaproveitar `QualityPicker` e `QUALITY_COST_USD` de `@/components/QualityPicker`.
+- Contagem de fotos: consulta rápida a `listing_images` filtrando por `original_external_url not null` no momento de abrir o diálogo (mesma lógica de `openEnhanceConfirm` em `listings.$id.tsx`).
+- Ícones: `Sparkles`, `Eraser` de `lucide-react`.
+- Nenhuma mudança em Edge Function, banco ou outras telas.
