@@ -423,11 +423,12 @@ function ListingDetail() {
                   .filter((u): u is string => !!u)}
                 alt={listing.title ?? ""}
                 className="rounded-md"
+                onImageClick={(i) => setLightboxIndex(i)}
               />
               {images.length > 0 && (
                 <>
                 <p className="text-xs text-muted-foreground">
-                  Use os botões em cada foto para tratar, remover marca d'água ou excluir individualmente.
+                  Clique na foto para ampliar. Use os botões em cada foto para tratar, remover marca d'água ou excluir individualmente.
                 </p>
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
                   {images.map((im, idx) => {
@@ -445,7 +446,8 @@ function ListingDetail() {
                             alt=""
                             referrerPolicy="no-referrer"
                             loading="lazy"
-                            className="h-full w-full object-cover"
+                            onClick={() => setLightboxIndex(idx)}
+                            className="h-full w-full cursor-zoom-in object-cover"
                             onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
                           />
                         ) : (
@@ -453,6 +455,7 @@ function ListingDetail() {
                             {im.status === "failed" ? "falhou" : "—"}
                           </div>
                         )}
+
                         {isProcessing && (
                           <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-[10px] text-white">
                             tratando…
