@@ -563,7 +563,7 @@ function ListingDetail() {
                         {isEnhanced && (
                           <div className="absolute left-1 top-1 rounded bg-primary px-1 text-[10px] text-primary-foreground">IA</div>
                         )}
-                        {!isProcessing && (
+                        {!isProcessing && !selectionMode && (
                           <div className="absolute inset-x-0 bottom-0 flex items-stretch justify-between gap-px bg-black/60 backdrop-blur-sm">
                             {canEnhance ? (
                               <>
