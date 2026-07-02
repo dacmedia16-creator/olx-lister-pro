@@ -727,7 +727,7 @@ function ListingDetail() {
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-sm">
                 <div>
-                  <strong>{pendingCount}</strong> foto(s) serão processadas pela OpenAI.
+                  <strong>{pendingCount}</strong> foto(s){confirmIds ? " selecionada(s)" : ""} serão processadas pela OpenAI.
                 </div>
                 {confirmMode === "watermark_only" && (
                   <div className="text-muted-foreground">
