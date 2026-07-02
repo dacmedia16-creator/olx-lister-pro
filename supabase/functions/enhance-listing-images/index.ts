@@ -36,13 +36,14 @@ async function fetchBytes(url: string): Promise<Uint8Array | null> {
 
 
 
-async function callOpenAiImageEdit(imageBytes: Uint8Array, promptText: string, sizeOverride?: string): Promise<Uint8Array> {
+async function callOpenAiImageEdit(imageBytes: Uint8Array, promptText: string, sizeOverride?: string, quality: "low" | "medium" = "low"): Promise<Uint8Array> {
   const form = new FormData();
   form.append("model", MODEL);
   form.append("prompt", promptText);
   form.append("size", sizeOverride || IMAGE_SIZE);
-  form.append("quality", "low");
+  form.append("quality", quality);
   form.append("n", "1");
+
   form.append("image", new Blob([imageBytes], { type: "image/png" }), "input.png");
 
   const r = await fetch("https://api.openai.com/v1/images/edits", {
