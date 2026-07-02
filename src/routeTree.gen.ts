@@ -16,7 +16,10 @@ import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedImportRouteImport } from './routes/_authenticated/import'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedListingsIndexRouteImport } from './routes/_authenticated/listings.index'
+import { Route as AuthenticatedToolsEnhanceRouteImport } from './routes/_authenticated/tools.enhance'
 import { Route as AuthenticatedListingsIdRouteImport } from './routes/_authenticated/listings.$id'
+import { Route as AuthenticatedToolsEnhanceNewRouteImport } from './routes/_authenticated/tools.enhance.new'
+import { Route as AuthenticatedToolsEnhanceIdRouteImport } from './routes/_authenticated/tools.enhance.$id'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -53,11 +56,29 @@ const AuthenticatedListingsIndexRoute =
     path: '/listings/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedToolsEnhanceRoute =
+  AuthenticatedToolsEnhanceRouteImport.update({
+    id: '/tools/enhance',
+    path: '/tools/enhance',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedListingsIdRoute = AuthenticatedListingsIdRouteImport.update({
   id: '/listings/$id',
   path: '/listings/$id',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedToolsEnhanceNewRoute =
+  AuthenticatedToolsEnhanceNewRouteImport.update({
+    id: '/new',
+    path: '/new',
+    getParentRoute: () => AuthenticatedToolsEnhanceRoute,
+  } as any)
+const AuthenticatedToolsEnhanceIdRoute =
+  AuthenticatedToolsEnhanceIdRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => AuthenticatedToolsEnhanceRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -66,7 +87,10 @@ export interface FileRoutesByFullPath {
   '/import': typeof AuthenticatedImportRoute
   '/search': typeof AuthenticatedSearchRoute
   '/listings/$id': typeof AuthenticatedListingsIdRoute
+  '/tools/enhance': typeof AuthenticatedToolsEnhanceRouteWithChildren
   '/listings/': typeof AuthenticatedListingsIndexRoute
+  '/tools/enhance/$id': typeof AuthenticatedToolsEnhanceIdRoute
+  '/tools/enhance/new': typeof AuthenticatedToolsEnhanceNewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -75,7 +99,10 @@ export interface FileRoutesByTo {
   '/import': typeof AuthenticatedImportRoute
   '/search': typeof AuthenticatedSearchRoute
   '/listings/$id': typeof AuthenticatedListingsIdRoute
+  '/tools/enhance': typeof AuthenticatedToolsEnhanceRouteWithChildren
   '/listings': typeof AuthenticatedListingsIndexRoute
+  '/tools/enhance/$id': typeof AuthenticatedToolsEnhanceIdRoute
+  '/tools/enhance/new': typeof AuthenticatedToolsEnhanceNewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -86,7 +113,10 @@ export interface FileRoutesById {
   '/_authenticated/import': typeof AuthenticatedImportRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/_authenticated/listings/$id': typeof AuthenticatedListingsIdRoute
+  '/_authenticated/tools/enhance': typeof AuthenticatedToolsEnhanceRouteWithChildren
   '/_authenticated/listings/': typeof AuthenticatedListingsIndexRoute
+  '/_authenticated/tools/enhance/$id': typeof AuthenticatedToolsEnhanceIdRoute
+  '/_authenticated/tools/enhance/new': typeof AuthenticatedToolsEnhanceNewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -97,7 +127,10 @@ export interface FileRouteTypes {
     | '/import'
     | '/search'
     | '/listings/$id'
+    | '/tools/enhance'
     | '/listings/'
+    | '/tools/enhance/$id'
+    | '/tools/enhance/new'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -106,7 +139,10 @@ export interface FileRouteTypes {
     | '/import'
     | '/search'
     | '/listings/$id'
+    | '/tools/enhance'
     | '/listings'
+    | '/tools/enhance/$id'
+    | '/tools/enhance/new'
   id:
     | '__root__'
     | '/'
@@ -116,7 +152,10 @@ export interface FileRouteTypes {
     | '/_authenticated/import'
     | '/_authenticated/search'
     | '/_authenticated/listings/$id'
+    | '/_authenticated/tools/enhance'
     | '/_authenticated/listings/'
+    | '/_authenticated/tools/enhance/$id'
+    | '/_authenticated/tools/enhance/new'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -176,6 +215,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedListingsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/tools/enhance': {
+      id: '/_authenticated/tools/enhance'
+      path: '/tools/enhance'
+      fullPath: '/tools/enhance'
+      preLoaderRoute: typeof AuthenticatedToolsEnhanceRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/listings/$id': {
       id: '/_authenticated/listings/$id'
       path: '/listings/$id'
@@ -183,14 +229,45 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedListingsIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/tools/enhance/new': {
+      id: '/_authenticated/tools/enhance/new'
+      path: '/new'
+      fullPath: '/tools/enhance/new'
+      preLoaderRoute: typeof AuthenticatedToolsEnhanceNewRouteImport
+      parentRoute: typeof AuthenticatedToolsEnhanceRoute
+    }
+    '/_authenticated/tools/enhance/$id': {
+      id: '/_authenticated/tools/enhance/$id'
+      path: '/$id'
+      fullPath: '/tools/enhance/$id'
+      preLoaderRoute: typeof AuthenticatedToolsEnhanceIdRouteImport
+      parentRoute: typeof AuthenticatedToolsEnhanceRoute
+    }
   }
 }
+
+interface AuthenticatedToolsEnhanceRouteChildren {
+  AuthenticatedToolsEnhanceIdRoute: typeof AuthenticatedToolsEnhanceIdRoute
+  AuthenticatedToolsEnhanceNewRoute: typeof AuthenticatedToolsEnhanceNewRoute
+}
+
+const AuthenticatedToolsEnhanceRouteChildren: AuthenticatedToolsEnhanceRouteChildren =
+  {
+    AuthenticatedToolsEnhanceIdRoute: AuthenticatedToolsEnhanceIdRoute,
+    AuthenticatedToolsEnhanceNewRoute: AuthenticatedToolsEnhanceNewRoute,
+  }
+
+const AuthenticatedToolsEnhanceRouteWithChildren =
+  AuthenticatedToolsEnhanceRoute._addFileChildren(
+    AuthenticatedToolsEnhanceRouteChildren,
+  )
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedImportRoute: typeof AuthenticatedImportRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedListingsIdRoute: typeof AuthenticatedListingsIdRoute
+  AuthenticatedToolsEnhanceRoute: typeof AuthenticatedToolsEnhanceRouteWithChildren
   AuthenticatedListingsIndexRoute: typeof AuthenticatedListingsIndexRoute
 }
 
@@ -199,6 +276,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedImportRoute: AuthenticatedImportRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedListingsIdRoute: AuthenticatedListingsIdRoute,
+  AuthenticatedToolsEnhanceRoute: AuthenticatedToolsEnhanceRouteWithChildren,
   AuthenticatedListingsIndexRoute: AuthenticatedListingsIndexRoute,
 }
 

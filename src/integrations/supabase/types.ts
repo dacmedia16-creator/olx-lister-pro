@@ -397,6 +397,89 @@ export type Database = {
         }
         Relationships: []
       }
+      photo_batch_images: {
+        Row: {
+          batch_id: string
+          created_at: string
+          enhanced_at: string | null
+          enhanced_storage_path: string | null
+          enhancement_status: string
+          error_message: string | null
+          id: string
+          original_filename: string | null
+          original_storage_path: string
+          position: number
+          user_id: string
+        }
+        Insert: {
+          batch_id: string
+          created_at?: string
+          enhanced_at?: string | null
+          enhanced_storage_path?: string | null
+          enhancement_status?: string
+          error_message?: string | null
+          id?: string
+          original_filename?: string | null
+          original_storage_path: string
+          position?: number
+          user_id: string
+        }
+        Update: {
+          batch_id?: string
+          created_at?: string
+          enhanced_at?: string | null
+          enhanced_storage_path?: string | null
+          enhancement_status?: string
+          error_message?: string | null
+          id?: string
+          original_filename?: string | null
+          original_storage_path?: string
+          position?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "photo_batch_images_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "photo_batches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      photo_batches: {
+        Row: {
+          created_at: string
+          id: string
+          image_count: number
+          mode: string
+          name: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          image_count?: number
+          mode?: string
+          name?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          image_count?: number
+          mode?: string
+          name?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       processing_logs: {
         Row: {
           created_at: string

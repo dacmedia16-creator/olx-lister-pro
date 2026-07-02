@@ -136,10 +136,75 @@ Deno.serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const body = await req.json().catch(() => ({}));
     const listingId = body?.listing_id as string | undefined;
+    const batchId = body?.batch_id as string | undefined;
     const imageIds = Array.isArray(body?.image_ids) ? (body.image_ids as string[]) : null;
     const mode = (body?.mode === "watermark_only" ? "watermark_only" : "enhance") as "enhance" | "watermark_only";
     const activePrompt = mode === "watermark_only" ? WATERMARK_ONLY_PROMPT : PROMPT;
-    if (!listingId) return new Response(JSON.stringify({ error: "listing_id required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+    // Fluxo 2: lote de upload avulso ------------------------------------------------
+    if (batchId) {
+      const { data: batch, error: berr } = await admin.from("photo_batches").select("id,user_id").eq("id", batchId).maybeSingle();
+      if (berr || !batch || batch.user_id !== userId) {
+        return new Response(JSON.stringify({ error: "not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      let q = admin.from("photo_batch_images").select("id,original_storage_path,enhancement_status").eq("batch_id", batchId);
+      if (imageIds && imageIds.length) q = q.in("id", imageIds);
+      const { data: imgs } = await q;
+      const allTargets = (imgs ?? []).filter((i: any) => i.original_storage_path);
+      const MAX_PER_CALL = 2;
+      const targets = allTargets.slice(0, MAX_PER_CALL);
+      const remaining_ids = allTargets.slice(MAX_PER_CALL).map((t: any) => t.id);
+
+      await admin.from("photo_batch_images")
+        .update({ enhancement_status: "processing" })
+        .in("id", targets.map((t: any) => t.id));
+
+      const results: Array<{ id: string; ok: boolean; error?: string; mode?: string }> = [];
+      for (const img of targets) {
+        try {
+          const { data: dl, error: dlErr } = await admin.storage.from(BUCKET).download(img.original_storage_path!);
+          if (dlErr || !dl) throw new Error(dlErr?.message || "Falha ao baixar original do storage");
+          const srcBytes = new Uint8Array(await dl.arrayBuffer());
+          const sizeArg = mode === "watermark_only" ? pickSizeForOriginal(srcBytes) : IMAGE_SIZE;
+          const bytes = await callOpenAiImageEdit(srcBytes, activePrompt, sizeArg);
+          const path = `${userId}/uploads/${batchId}/enhanced/${img.id}.png`;
+          const { error: upErr } = await admin.storage.from(BUCKET).upload(path, bytes, { contentType: "image/png", upsert: true });
+          if (upErr) throw new Error(upErr.message);
+          await admin.from("photo_batch_images").update({
+            enhanced_storage_path: path,
+            enhancement_status: "done",
+            enhanced_at: new Date().toISOString(),
+            error_message: null,
+          }).eq("id", img.id);
+          results.push({ id: img.id, ok: true, mode });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          await admin.from("photo_batch_images").update({
+            enhancement_status: "failed",
+            error_message: msg.slice(0, 500),
+          }).eq("id", img.id);
+          results.push({ id: img.id, ok: false, error: msg });
+        }
+      }
+
+      try {
+        await admin.from("processing_logs").insert({
+          user_id: userId,
+          type: mode === "watermark_only" ? "remove_watermark_upload" : "enhance_upload",
+          status: "done",
+          message: `enhance batch (${mode}): ${results.filter(r => r.ok).length}/${results.length}`,
+          metadata_json: { model: MODEL, mode, batch_id: batchId, results },
+        });
+      } catch { /* noop */ }
+
+      return new Response(JSON.stringify({ results, remaining_ids }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Fluxo 1: anúncio importado ---------------------------------------------------
+    if (!listingId) return new Response(JSON.stringify({ error: "listing_id or batch_id required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     const { data: listing, error: lerr } = await admin.from("olx_listings").select("id,user_id").eq("id", listingId).maybeSingle();
     if (lerr || !listing || listing.user_id !== userId) {
@@ -159,8 +224,6 @@ Deno.serve(async (req) => {
       .update({ enhancement_status: "processing", enhancement_prompt: activePrompt })
       .in("id", targets.map((t: any) => t.id));
 
-    // (TARGET_RATIO/TOLERANCE removidos — fallback de canvas foi eliminado.)
-
     const results: Array<{ id: string; ok: boolean; error?: string; original_ratio?: number; final_ratio?: number; was_corrected?: boolean; white_bars_detected?: boolean; retried?: boolean; mode?: string }> = [];
     for (const img of targets) {
       try {
@@ -170,12 +233,8 @@ Deno.serve(async (req) => {
         const sizeArg = mode === "watermark_only" ? pickSizeForOriginal(srcBytes) : IMAGE_SIZE;
         let bytes = await callOpenAiImageEdit(srcBytes, activePrompt, sizeArg);
 
-        // Sem detecção de faixas brancas nem fallback de canvas (removidos junto com imagescript).
-        // A OpenAI já devolve em 1536x1024 conforme size solicitado.
         const whiteBars = false;
         const retried = false;
-
-        // Valida aspect ratio via header PNG (sem decodificar pixels).
         let originalRatio: number | undefined;
         let finalRatio: number | undefined;
         const wasCorrected = false;
@@ -184,7 +243,6 @@ Deno.serve(async (req) => {
           originalRatio = size.width / size.height;
           finalRatio = originalRatio;
         }
-
 
         const path = `${userId}/enhanced/${listingId}/${img.id}.png`;
         const { error: upErr } = await admin.storage.from(BUCKET).upload(path, bytes, {
@@ -224,6 +282,7 @@ Deno.serve(async (req) => {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+
 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

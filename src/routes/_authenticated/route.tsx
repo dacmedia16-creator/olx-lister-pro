@@ -56,6 +56,14 @@ function AuthenticatedLayout() {
               >
                 Anúncios importados
               </Link>
+              <Link
+                to="/tools/enhance"
+                className="text-sm text-muted-foreground hover:text-foreground"
+                activeProps={{ className: "text-sm text-foreground font-medium" }}
+              >
+                Tratar fotos
+              </Link>
+
             </nav>
           </div>
           <Button variant="ghost" size="sm" onClick={handleSignOut}>
