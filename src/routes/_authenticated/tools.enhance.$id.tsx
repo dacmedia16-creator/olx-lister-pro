@@ -272,6 +272,28 @@ function BatchDetail() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmMode === "watermark_only" ? "Remover marca d'água" : "Tratar fotos"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmCount} foto(s) serão processadas. Escolha a qualidade da IA:
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <QualityPicker value={quality} onChange={setQuality} />
+          <div className="rounded-md bg-muted/40 p-2 text-sm">
+            Custo estimado: <strong>US$ {confirmCost}</strong>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={runConfirmed}>Processar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+
   );
 }
