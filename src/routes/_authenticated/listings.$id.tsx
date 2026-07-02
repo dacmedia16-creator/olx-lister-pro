@@ -20,6 +20,8 @@ import { toast } from "sonner";
 import { formatBRL, formatDate } from "@/lib/olx";
 import { HashBadge } from "@/components/HashBadge";
 import { OlxImageCarousel } from "@/components/OlxImageCarousel";
+import { ImageLightbox } from "@/components/ImageLightbox";
+
 import { deleteListing } from "@/lib/delete-listing";
 import { deleteListingImage } from "@/lib/delete-listing-image";
 import { downloadEnhanced, downloadEnhancedZip, getEnhancedSignedUrl } from "@/lib/enhanced-images";
@@ -84,6 +86,8 @@ function ListingDetail() {
   const [showEnhanced, setShowEnhanced] = useState(true);
   const [enhancedUrls, setEnhancedUrls] = useState<Record<string, string>>({});
   const [downloadingZip, setDownloadingZip] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("olx_listings").select("*").eq("id", id).maybeSingle();
@@ -421,11 +425,12 @@ function ListingDetail() {
                   .filter((u): u is string => !!u)}
                 alt={listing.title ?? ""}
                 className="rounded-md"
+                onImageClick={(i) => setLightboxIndex(i)}
               />
               {images.length > 0 && (
                 <>
                 <p className="text-xs text-muted-foreground">
-                  Use os botões em cada foto para tratar, remover marca d'água ou excluir individualmente.
+                  Clique na foto para ampliar. Use os botões em cada foto para tratar, remover marca d'água ou excluir individualmente.
                 </p>
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
                   {images.map((im, idx) => {
@@ -443,7 +448,8 @@ function ListingDetail() {
                             alt=""
                             referrerPolicy="no-referrer"
                             loading="lazy"
-                            className="h-full w-full object-cover"
+                            onClick={() => setLightboxIndex(idx)}
+                            className="h-full w-full cursor-zoom-in object-cover"
                             onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
                           />
                         ) : (
@@ -451,6 +457,7 @@ function ListingDetail() {
                             {im.status === "failed" ? "falhou" : "—"}
                           </div>
                         )}
+
                         {isProcessing && (
                           <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-[10px] text-white">
                             tratando…
@@ -660,7 +667,16 @@ function ListingDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <ImageLightbox
+        images={images
+          .map((i) => (showEnhanced && enhancedUrls[i.id]) || i.original_external_url)
+          .filter((u): u is string => !!u)}
+        index={lightboxIndex}
+        onClose={() => setLightboxIndex(null)}
+        onChangeIndex={setLightboxIndex}
+      />
     </div>
+
   );
 }
 
