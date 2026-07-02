@@ -4,10 +4,21 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Download, Eraser, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { downloadEnhanced, downloadEnhancedZip, getEnhancedSignedUrl } from "@/lib/enhanced-images";
 import { deleteBatchImage } from "@/lib/delete-batch";
+import { QualityPicker, QUALITY_COST_USD, type EnhanceQuality } from "@/components/QualityPicker";
 
 export const Route = createFileRoute("/_authenticated/tools/enhance/$id")({
   head: () => ({ meta: [{ title: "Lote de fotos" }] }),
@@ -24,6 +35,7 @@ type Img = {
   original_filename: string | null;
   error_message: string | null;
 };
+
 
 const COST = 0.02;
 
