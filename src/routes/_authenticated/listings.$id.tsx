@@ -637,36 +637,32 @@ function ListingDetail() {
                 <div>
                   <strong>{pendingCount}</strong> foto(s) serão processadas pela OpenAI.
                 </div>
-                <div>
-                  Custo estimado:{" "}
-                  <strong>US$ {(pendingCount * COST_PER_IMAGE_USD).toFixed(2)}</strong>{" "}
-                  <span className="text-muted-foreground">
-                    (~US$ {COST_PER_IMAGE_USD.toFixed(2)} por foto)
-                  </span>
-                </div>
-                {confirmMode === "watermark_only" ? (
+                {confirmMode === "watermark_only" && (
                   <div className="text-muted-foreground">
                     Este modo apaga apenas logos/selos dos portais (OLX, ZAP, Viva Real) e mantém o resto da foto igual — mesma orientação, cores, enquadramento e nitidez.
                   </div>
-                ) : (
-                  <>
-                    <div className="text-muted-foreground">
-                      Modo econômico ativo (qualidade baixa, ~US$ 0,02/foto). O resultado pode ter menos nitidez que no modo alto.
-                    </div>
-                    <div className="text-muted-foreground">
-                      Retratar sobrescreve as fotos já tratadas e gera novo custo.
-                    </div>
-                  </>
                 )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Qualidade da IA</div>
+            <QualityPicker value={confirmQuality} onChange={setConfirmQuality} />
+          </div>
+          <div className="rounded-md bg-muted/40 p-2 text-sm">
+            Custo estimado:{" "}
+            <strong>US$ {(pendingCount * QUALITY_COST_USD[confirmQuality]).toFixed(2)}</strong>{" "}
+            <span className="text-muted-foreground">
+              (~US$ {QUALITY_COST_USD[confirmQuality].toFixed(2)} por foto)
+            </span>
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setConfirmOpen(false); void enhance(confirmMode); }}>
+            <AlertDialogAction onClick={() => { setConfirmOpen(false); void enhance(confirmMode, confirmQuality); }}>
               {confirmMode === "watermark_only" ? "Confirmar e remover" : "Confirmar e tratar"}
             </AlertDialogAction>
           </AlertDialogFooter>
+
         </AlertDialogContent>
       </AlertDialog>
       <ImageLightbox
