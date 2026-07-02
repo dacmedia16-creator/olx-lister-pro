@@ -94,6 +94,17 @@ function BatchesList() {
                     <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <Badge variant="outline">{b.mode === "watermark_only" ? "Marca d'água" : "Tratar completo"}</Badge>
                       <span>{b.image_count} foto(s)</span>
+                      {b.enhanced_count ? (
+                        <Badge
+                          className={
+                            b.enhanced_count === b.image_count
+                              ? "bg-emerald-600 text-white hover:bg-emerald-600"
+                              : "bg-fuchsia-600 text-white hover:bg-fuchsia-600"
+                          }
+                        >
+                          IA {b.enhanced_count}/{b.image_count}
+                        </Badge>
+                      ) : null}
                       <span>· {formatDate(b.created_at)}</span>
                     </div>
                   </div>
