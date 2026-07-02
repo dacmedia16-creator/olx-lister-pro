@@ -57,9 +57,11 @@ function NewBatch() {
 
   const start = async () => {
     if (files.length === 0) return;
+    const cost = QUALITY_COST_USD[quality];
     if (!window.confirm(
-      `${files.length} foto(s) serão processadas pela IA.\nCusto estimado: US$ ${(files.length * COST_PER_IMAGE_USD).toFixed(2)} (~US$ ${COST_PER_IMAGE_USD.toFixed(2)}/foto).\nContinuar?`
+      `${files.length} foto(s) serão processadas pela IA.\nQualidade: ${quality === "medium" ? "Média" : "Baixa"}\nCusto estimado: US$ ${(files.length * cost).toFixed(2)} (~US$ ${cost.toFixed(2)}/foto).\nContinuar?`
     )) return;
+
 
     setProcessing(true);
     setProgress({ done: 0, total: files.length });
