@@ -126,7 +126,9 @@ function NewBatch() {
     }
   };
 
-  const totalCost = (files.length * COST_PER_IMAGE_USD).toFixed(2);
+  const perFotoCost = QUALITY_COST_USD[quality];
+  const totalCost = (files.length * perFotoCost).toFixed(2);
+
 
   return (
     <div className="space-y-4">
