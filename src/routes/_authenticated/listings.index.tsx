@@ -44,6 +44,7 @@ type Img = { listing_id: string; original_external_url: string | null; position:
 function ListingsPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const [photoStats, setPhotoStats] = useState<Record<string, { total: number; enhanced: number }>>({});
   const [city, setCity] = useState("");
   const [neighborhood, setNeighborhood] = useState("");
   const [category, setCategory] = useState("");
