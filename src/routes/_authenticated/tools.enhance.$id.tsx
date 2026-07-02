@@ -48,6 +48,11 @@ function BatchDetail() {
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [zipping, setZipping] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmMode, setConfirmMode] = useState<"enhance" | "watermark_only">("enhance");
+  const [confirmScope, setConfirmScope] = useState<{ kind: "all" } | { kind: "one"; imageId: string }>({ kind: "all" });
+  const [quality, setQuality] = useState<EnhanceQuality>("low");
+
 
   const load = useCallback(async () => {
     const { data: b } = await supabase.from("photo_batches").select("*").eq("id", id).maybeSingle();
