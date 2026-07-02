@@ -388,7 +388,7 @@ function buildPlpPayloads(portal: Portal, plpUrl: string, sourceUrl: string, lis
     for (let page = 1; page <= 2; page++) pushUniquePayload(payloads, { ...base, keyword, page });
   }
 
-  return payloads.slice(0, 18);
+  return payloads.slice(0, 24);
 }
 
 function derivePlpFallbackUrls(sourceUrl: string, listingRoot?: any, title?: string | null, portal: Portal = "olx"): string[] {
