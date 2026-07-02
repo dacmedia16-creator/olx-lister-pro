@@ -667,7 +667,16 @@ function ListingDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <ImageLightbox
+        images={images
+          .map((i) => (showEnhanced && enhancedUrls[i.id]) || i.original_external_url)
+          .filter((u): u is string => !!u)}
+        index={lightboxIndex}
+        onClose={() => setLightboxIndex(null)}
+        onChangeIndex={setLightboxIndex}
+      />
     </div>
+
   );
 }
 
