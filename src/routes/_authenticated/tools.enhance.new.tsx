@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,8 @@ function NewBatch() {
   const [files, setFiles] = useState<File[]>([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const onPick = useCallback((list: FileList | null) => {
     if (!list) return;
@@ -160,17 +162,42 @@ function NewBatch() {
       <Card>
         <CardHeader><CardTitle>Fotos ({files.length}/{MAX_FILES})</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed p-6 text-sm text-muted-foreground hover:bg-muted/50">
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              multiple
-              className="hidden"
-              disabled={processing || files.length >= MAX_FILES}
-              onChange={(e) => { onPick(e.target.files); e.target.value = ""; }}
-            />
-            Clique para selecionar fotos ou arraste aqui
-          </label>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            multiple
+            className="sr-only"
+            disabled={processing || files.length >= MAX_FILES}
+            onChange={(e) => { onPick(e.target.files); e.target.value = ""; }}
+          />
+          {(() => {
+            const disabled = processing || files.length >= MAX_FILES;
+            const open = () => { if (!disabled) inputRef.current?.click(); };
+            return (
+              <div
+                role="button"
+                tabIndex={disabled ? -1 : 0}
+                aria-disabled={disabled}
+                onClick={open}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }}
+                onDragOver={(e) => { e.preventDefault(); if (!disabled) setDragActive(true); }}
+                onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragActive(false);
+                  if (!disabled) onPick(e.dataTransfer.files);
+                }}
+                className={`flex flex-col items-center justify-center gap-2 rounded-md border border-dashed p-6 text-sm text-muted-foreground transition-colors ${
+                  disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-muted/50"
+                } ${dragActive ? "border-primary bg-primary/5 text-foreground" : ""}`}
+              >
+                {files.length >= MAX_FILES
+                  ? `Máximo de ${MAX_FILES} fotos atingido`
+                  : "Clique para selecionar fotos ou arraste aqui"}
+              </div>
+            );
+          })()}
 
           {files.length > 0 && (
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">

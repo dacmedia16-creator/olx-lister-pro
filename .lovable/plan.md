@@ -1,30 +1,13 @@
-## Objetivo
+## Problema
 
-Ao clicar em uma miniatura (ou na foto principal do carrossel), abrir um **lightbox** em tela cheia com a foto ampliada, sem interferir nos botões de ação (Tratar / Marca / Baixar / Excluir).
+Na tela `/tools/enhance/new`, clicar na área tracejada "Clique para selecionar fotos ou arraste aqui" não abre o seletor de arquivos. A causa é o padrão `<label>` envolvendo um `<input type="file" class="hidden">` — em algumas combinações de navegador/DevTools o clique não propaga para o input oculto, e além disso o texto promete drag-and-drop que hoje não está implementado.
 
-## Mudanças
+## Correção (somente frontend, arquivo `src/routes/_authenticated/tools.enhance.new.tsx`)
 
-### 1. Novo componente `src/components/ImageLightbox.tsx`
+1. Substituir o `<label>` que envolve o input por um `<div role="button" tabIndex={0}>` com `onClick` que chama `inputRef.current?.click()`.
+2. Manter o `<input type="file" ref={inputRef} className="sr-only">` como irmão (fora do div clicável) para evitar conflito de propagação.
+3. Adicionar suporte real a arrastar-e-soltar: handlers `onDragOver` (preventDefault + estado `dragActive`), `onDragLeave`, `onDrop` (chama `onPick(e.dataTransfer.files)`).
+4. Feedback visual: borda destacada quando `dragActive`, cursor `not-allowed` quando `processing || files.length >= MAX_FILES`, e mensagem "Máximo atingido" nesse caso.
+5. Suporte a teclado: `onKeyDown` disparando o click em `Enter`/`Space`.
 
-- Modal fullscreen com fundo escuro (`bg-black/90`), fechado ao clicar fora, no botão ✕ ou tecla `Esc`.
-- Imagem centralizada com `max-h-[95vh] max-w-[95vw] object-contain` e `referrerPolicy="no-referrer"`.
-- Setas ← → (teclado e botões) para navegar entre as fotos da lista.
-- Contador `x / total` no topo.
-- Botão de download da foto atual (usa a URL exibida).
-
-### 2. `src/routes/_authenticated/listings.$id.tsx`
-
-- Estado `lightboxIndex: number | null`.
-- Envolver cada `<img>` da grade de miniaturas em um `<button type="button" onClick={() => setLightboxIndex(idx)}>` — as ações da barra inferior já usam `stopPropagation`, então não vão abrir o lightbox por engano.
-- Tornar a imagem principal do `OlxImageCarousel` clicável para abrir no índice 0 (ou passar `onImageClick` como prop).
-- Renderizar `<ImageLightbox images={displayUrls} index={lightboxIndex} onClose={...} />` no final da página.
-- Cursor `cursor-zoom-in` na miniatura para deixar óbvio.
-
-### 3. `src/components/OlxImageCarousel.tsx`
-
-- Adicionar prop opcional `onImageClick?: (index: number) => void`; quando presente, aplicar no `<img>` principal com `cursor-zoom-in`.
-
-## Não muda
-
-- Edge functions, banco, estilos globais.
-- Botões de ação por foto continuam funcionando exatamente como estão.
+Nenhuma mudança em lógica de upload, banco, edge function ou custo — só o gatilho de abertura do seletor e o dnd.
