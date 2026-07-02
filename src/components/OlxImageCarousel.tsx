@@ -8,9 +8,11 @@ type Props = {
   className?: string;
   aspect?: string; // ex.: "aspect-video" | "aspect-square"
   showBullets?: boolean;
+  onImageClick?: (index: number) => void;
 };
 
-export function OlxImageCarousel({ urls, alt = "", className, aspect = "aspect-video", showBullets = true }: Props) {
+export function OlxImageCarousel({ urls, alt = "", className, aspect = "aspect-video", showBullets = true, onImageClick }: Props) {
+
   const clean = useMemo(() => Array.from(new Set((urls ?? []).filter((u): u is string => typeof u === "string" && !!u))), [urls]);
   const [dead, setDead] = useState<Set<number>>(new Set());
   const [idx, setIdx] = useState(0);
