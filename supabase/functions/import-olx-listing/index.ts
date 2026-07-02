@@ -236,14 +236,23 @@ function getZapKeyword(listingRoot?: any, title?: string | null): string | null 
 
 function parseZapAddressFallback(listingRoot?: any): { city: string | null; state: string | null; neighborhood: string | null } {
   const formatted = String(listingRoot?.formattedAddress ?? "");
-  const match = formatted.match(/([^,\-]+)\s*-\s*([A-Z]{2})(?:\b|,)/i);
-  const beforeCity = formatted.split(",")[0] ?? "";
-  const neighborhood = beforeCity.includes(" - ") ? beforeCity.split(" - ").pop()?.trim() : null;
-  return {
-    city: match?.[1]?.trim() || null,
-    state: match?.[2]?.toUpperCase() || null,
-    neighborhood: neighborhood || null,
-  };
+  // Ex.: "Avenida X, 1893 - Jardim Sao Carlos, Sorocaba - SP"
+  const parts = formatted.split(",").map((p) => p.trim()).filter(Boolean);
+  const cityStateMatch = formatted.match(/([^,\-]+?)\s*-\s*([A-Z]{2})(?:\b|,|$)/i);
+  const city = cityStateMatch?.[1]?.trim() || null;
+  const state = cityStateMatch?.[2]?.toUpperCase() || null;
+
+  // Bairro: penúltimo segmento (antes de "Cidade - UF"), removendo prefixo "... - "
+  let neighborhood: string | null = null;
+  if (parts.length >= 2) {
+    const candidate = parts[parts.length - 2];
+    neighborhood = candidate.includes(" - ") ? (candidate.split(" - ").pop()?.trim() ?? null) : candidate;
+  } else if (parts.length === 1 && parts[0].includes(" - ")) {
+    neighborhood = parts[0].split(" - ").pop()?.trim() ?? null;
+  }
+  if (neighborhood && city && neighborhood.toLowerCase() === city.toLowerCase()) neighborhood = null;
+
+  return { city, state, neighborhood: neighborhood || null };
 }
 
 function numberFromText(raw: unknown, re: RegExp): number | null {
