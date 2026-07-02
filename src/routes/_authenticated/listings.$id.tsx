@@ -377,7 +377,7 @@ function ListingDetail() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
           <CardTitle>Fotos</CardTitle>
-          {hasImages && (
+          {hasImages && !selectionMode && (
             <div className="flex flex-wrap items-center gap-2">
               {hasAnyEnhanced && (
                 <Button
@@ -388,6 +388,10 @@ function ListingDetail() {
                   {showEnhanced ? "Ver originais" : "Ver tratadas"}
                 </Button>
               )}
+              <Button size="sm" variant="outline" onClick={() => setSelectionMode(true)} disabled={enhancing}>
+                <CheckSquare className="mr-2 h-4 w-4" />
+                Selecionar
+              </Button>
               <Button size="sm" variant="outline" onClick={() => openEnhanceConfirm("watermark_only")} disabled={enhancing}>
                 <Eraser className={`mr-2 h-4 w-4 ${enhancing ? "animate-pulse" : ""}`} />
                 Remover marca d'água
@@ -400,6 +404,7 @@ function ListingDetail() {
                     : "Processando..."
                   : hasAnyEnhanced ? "Retratar com IA" : "Tratar fotos com IA"}
               </Button>
+
               {hasAnyEnhanced && (
                 <Button size="sm" variant="secondary" onClick={downloadAll} disabled={downloadingZip}>
                   <Download className="mr-2 h-4 w-4" />
