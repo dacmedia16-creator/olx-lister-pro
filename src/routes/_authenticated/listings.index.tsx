@@ -241,6 +241,18 @@ function ListingsPage() {
                       <span className={`absolute left-2 top-2 rounded px-1.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur ${l.source_portal === "zap" ? "bg-blue-600/90" : "bg-purple-600/90"}`}>
                         {l.source_portal === "zap" ? "ZAP" : "OLX"}
                       </span>
+                      {photoStats[l.id]?.enhanced ? (
+                        <span
+                          className={`absolute left-2 bottom-2 rounded px-1.5 py-0.5 text-[10px] font-semibold text-white shadow ${
+                            photoStats[l.id].enhanced === photoStats[l.id].total
+                              ? "bg-emerald-600/90"
+                              : "bg-fuchsia-600/90"
+                          }`}
+                          title="Fotos tratadas por IA"
+                        >
+                          IA {photoStats[l.id].enhanced}/{photoStats[l.id].total}
+                        </span>
+                      ) : null}
                       {isProcessing && (
                         <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-sm">
                           <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -254,7 +266,12 @@ function ListingsPage() {
                         {[l.neighborhood, l.city].filter(Boolean).join(" · ") || "—"}
                       </div>
                       <div className="text-xs text-muted-foreground">{l.category ?? "—"}</div>
-                      <div className="text-xs text-muted-foreground">Publicado: {formatDate(l.listed_at ?? l.created_at)}</div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Publicado: {formatDate(l.listed_at ?? l.created_at)}</span>
+                        {photoStats[l.id]?.total ? (
+                          <span>{photoStats[l.id].enhanced}/{photoStats[l.id].total} tratadas</span>
+                        ) : null}
+                      </div>
                     </CardContent>
                   </Card>
                 </Link>
