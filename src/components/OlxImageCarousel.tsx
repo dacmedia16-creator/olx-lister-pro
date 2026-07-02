@@ -59,9 +59,11 @@ export function OlxImageCarousel({ urls, alt = "", className, aspect = "aspect-v
         alt={alt}
         loading="lazy"
         referrerPolicy="no-referrer"
-        className="h-full w-full object-cover"
+        onClick={onImageClick ? () => onImageClick(currentIdx) : undefined}
+        className={cn("h-full w-full object-cover", onImageClick && "cursor-zoom-in")}
         onError={() => markDeadAndAdvance(currentIdx)}
       />
+
       {alive.length > 1 && (
         <>
           <button
