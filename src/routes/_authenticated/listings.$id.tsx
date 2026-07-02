@@ -86,6 +86,8 @@ function ListingDetail() {
   const [showEnhanced, setShowEnhanced] = useState(true);
   const [enhancedUrls, setEnhancedUrls] = useState<Record<string, string>>({});
   const [downloadingZip, setDownloadingZip] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("olx_listings").select("*").eq("id", id).maybeSingle();
