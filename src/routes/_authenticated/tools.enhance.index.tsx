@@ -21,6 +21,7 @@ type Batch = {
   status: string;
   image_count: number;
   created_at: string;
+  enhanced_count?: number;
 };
 
 function BatchesList() {
@@ -33,7 +34,20 @@ function BatchesList() {
       .from("photo_batches")
       .select("id,name,mode,status,image_count,created_at")
       .order("created_at", { ascending: false });
-    setBatches((data as Batch[]) ?? []);
+    const list = (data as Batch[]) ?? [];
+    if (list.length > 0) {
+      const ids = list.map((b) => b.id);
+      const { data: imgs } = await supabase
+        .from("photo_batch_images")
+        .select("batch_id,enhanced_storage_path")
+        .in("batch_id", ids);
+      const counts: Record<string, number> = {};
+      for (const im of (imgs as { batch_id: string; enhanced_storage_path: string | null }[]) ?? []) {
+        if (im.enhanced_storage_path) counts[im.batch_id] = (counts[im.batch_id] ?? 0) + 1;
+      }
+      for (const b of list) b.enhanced_count = counts[b.id] ?? 0;
+    }
+    setBatches(list);
     setLoading(false);
   }, []);
 
