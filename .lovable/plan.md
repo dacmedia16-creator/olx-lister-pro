@@ -1,41 +1,64 @@
-## Por que o anúncio do ZAP não trouxe fotos
+## Objetivo
+Adicionar uma nova rota `/tools/enhance` (menu "Tratar fotos") onde o usuário sobe fotos direto do computador, escolhe o modo (Tratar completo ou Remover marca d'água) e recebe as versões processadas pela IA, salvas no histórico para reabrir e baixar depois.
 
-Fui atrás do que aconteceu na última importação (`https://www.zapimoveis.com.br/imovel/...-id-2895954575/`) e confirmei nos logs e no banco:
+## Backend
 
-- O PDP do ZAP na GeckoAPI voltou com título/descrição, mas **sem nenhuma imagem** (`images_source = "none"`, 0 imagens em `listing_images`).
-- A Edge Function tentou o fallback PLP do ZAP várias vezes (dá pra ver os `plp-image-fallback-zap attempt=1 status=200` nos logs), mas nenhum resultado bateu com o anúncio → registrei `warning: "GeckoAPI retornou 0 imagens em PDP e fallback PLP"`.
+### Nova tabela `photo_batches` (lote avulso)
+- `id uuid pk`, `user_id uuid`, `name text` (default "Lote DD/MM HH:mm"), `mode text check in ('enhance','watermark_only')`, `status text`, `image_count int`, `created_at`, `updated_at`.
+- RLS: dono apenas. GRANT authenticated + service_role.
 
-Ou seja, **não é bug do storage nem do frontend** — a GeckoAPI simplesmente não devolveu foto pra esse anúncio, e o fallback PLP não conseguiu casar. Motivos combinados:
+### Reaproveitar `listing_images`? Não.
+Criar `photo_batch_images` espelhando o essencial:
+- `id`, `batch_id fk`, `user_id`, `position int`, `original_storage_path text`, `enhanced_storage_path text`, `enhancement_status text` (queued/processing/done/failed), `error_message`, `enhanced_at`, `created_at`.
+- Sem `original_external_url` — a foto original mora no bucket `olx-images` em `${user_id}/uploads/${batch_id}/original/${image_id}.${ext}`.
+- Enhanced em `${user_id}/uploads/${batch_id}/enhanced/${image_id}.png`.
+- RLS + GRANTs iguais.
 
-1. **PDP do ZAP** frequentemente vem sem galeria (limitação da própria GeckoAPI documentada — os campos `images/photos/media` chegam vazios).
-2. **PLP do ZAP** exige `city + state + businessType`. O PDP devolveu `address.city = null / stateAcronym = null`, então dependemos do parser do `formattedAddress` ("... Sorocaba - SP"). Ele extrai `Sorocaba/SP`, mas a busca PLP resultante lista **os anúncios em destaque de Sorocaba**, e o `id 2895954575` provavelmente não apareceu nas primeiras páginas varridas → o match exige `score >= 45` com `id/url/slug`, então é descartado.
-3. Sem match, a função preserva as imagens anteriores (que nesse caso eram zero) e finaliza como sucesso, mas sem foto.
+### Edge Function `enhance-listing-images` — mínima extensão
+Aceitar payload alternativo `{ batch_id, image_ids?, mode }`:
+- Se vier `batch_id`, valida ownership em `photo_batches`, busca linhas em `photo_batch_images`, baixa bytes do storage (`original_storage_path`) em vez de `original_external_url`, roda o mesmo pipeline (prompt/size já corretos), grava `enhanced_storage_path` e atualiza `enhancement_status`.
+- Mantém contrato atual `{ listing_id, ... }` intacto — não quebra fluxo dos anúncios.
+- `mode` já suportado (`enhance` | `watermark_only`).
+- Log em `processing_logs` com `type = "enhance_upload" | "remove_watermark_upload"` e `metadata_json.batch_id`.
 
-## O que proponho corrigir
+Sem nova função, sem novo secret, sem mexer em custo.
 
-Mudanças focadas em aumentar a taxa de acerto do fallback PLP do ZAP, sem tocar em OLX, storage, IA ou UI de detalhes.
+## Frontend
 
-### Edge Function `import-olx-listing`
+### Menu
+- Adicionar link "Tratar fotos" no shell autenticado (mesmo lugar dos outros itens).
 
-1. **Endurecer o parser de endereço do ZAP** (`parseZapAddressFallback`)
-   - Já pega city/state; adicionar extração do bairro real (o texto antes de "Sorocaba" na 2ª vírgula) e usar como `neighborhood` no payload PLP para reduzir o universo de resultados.
-2. **Payloads PLP mais precisos**
-   - Além de `city+state+businessType`, incluir variações com `neighborhood`, `bedrooms` (extraído do título "3 quartos") e faixa de preço (±15% quando houver preço) — hoje já removemos filtros de banheiros/vagas, mas quartos + bairro reduzem drasticamente o ruído.
-   - Ordenar por `updated_desc` para pegar o anúncio recém-listado (o do exemplo é de 30/06).
-3. **Match mais tolerante**
-   - Aceitar match por `listing_id` presente em qualquer campo string do item (hoje só varremos alguns campos conhecidos); a GeckoAPI às vezes coloca o id só dentro de `link`/`url`/`sourceUrl`.
-   - Aceitar match por **slug do imóvel** (parte do path com bairro + tipo) além do id numérico.
-4. **Segunda tentativa: buscar direto o anúncio na PLP por `keyword` = título completo + bairro**
-   - Novo payload extra quando os anteriores não acharem: PLP com `keyword` = "3 quartos Jardim Sao Carlos 102m2" (montado a partir de bairro + quartos + área extraídos do título).
-5. **Log detalhado**
-   - Salvar em `processing_logs` o `attempts` do fallback (URL PLP, payload, item_count, top scores) para conseguir depurar sem precisar reimportar.
+### Rota `src/routes/_authenticated/tools.enhance.tsx` (listagem de lotes)
+- Botão "Novo lote" → abre `tools.enhance.new.tsx`.
+- Tabela de lotes: nome, modo (badge), qtd fotos, status agregado, data, ações (Abrir, Excluir).
 
-### Sem mudanças
+### Rota `src/routes/_authenticated/tools.enhance.new.tsx` (criar lote)
+- Seletor de modo (radio): **Tratar completo (3:2)** vs **Remover marca d'água (mantém original)**.
+- Dropzone múltiplo (aceita JPG/PNG, até 20 fotos por lote, 15 MB cada).
+- Preview em grid com miniaturas + botão remover antes de enviar.
+- Botão "Enviar e processar":
+  1. Cria `photo_batches` (status=queued).
+  2. Faz upload direto no bucket `olx-images` (client Supabase) para cada arquivo → insere `photo_batch_images` com `original_storage_path`.
+  3. Dispara `enhance-listing-images` em lotes de 2 (respeitando `MAX_PER_CALL` atual) com AlertDialog de custo estimado (mesmo componente já usado em `listings.$id.tsx`, reaproveitando cálculo `qtd * 0,02 USD`).
+  4. Redireciona para `tools.enhance.$id.tsx`.
 
-- Não mexer em OLX, `enhance-listing-images`, storage, UI de detalhes/galeria, migrations, secrets, custo de IA.
-- Não trocar de provedor (GeckoAPI continua) — se mesmo com essas melhorias o anúncio continuar sem foto, é limitação real do provider e o log detalhado vai deixar isso explícito.
+### Rota `src/routes/_authenticated/tools.enhance.$id.tsx` (detalhe do lote)
+- Igual galeria de `listings.$id.tsx` porém apontando para `photo_batch_images`:
+  - Miniatura original (signed URL) + versão tratada (signed URL) lado a lado.
+  - Botão "Retratar" individual, "Remover marca" individual (respeita o modo do lote como default, mas permite trocar por foto).
+  - Botão "Baixar tudo (ZIP)" — reusa `downloadEnhancedZip` de `src/lib/enhanced-images.ts`.
+  - Botão "Excluir foto" e "Excluir lote" (novos helpers `delete-batch-image.ts` / `delete-batch.ts` espelhando os existentes).
+
+### Reuso
+- `HashBadge`, AlertDialog de custo, `getEnhancedSignedUrl`, `downloadEnhancedZip` já servem — nada novo em `src/lib/enhanced-images.ts` além de aceitar path arbitrário (já aceita).
 
 ## Fora de escopo
-- Extrair fotos direto do site do ZAP (scraping próprio).
-- Alterar layout ou fluxo do frontend.
-- Reimportar automaticamente anúncios antigos — depois do deploy, basta clicar de novo em "Importar" no anúncio do ZAP que deu ruim.
+- Sem mudança no fluxo OLX/ZAP, sem novo modelo de IA, sem alteração de prompt/qualidade/custo.
+- Sem colar essas fotos em anúncios existentes.
+- Sem processamento em background/worker — mantém o mesmo padrão "dispara em lotes de 2 até acabar" já usado.
+
+## Técnico (curto)
+- Migration cria `photo_batches` + `photo_batch_images` com GRANTs + RLS por `auth.uid()`.
+- Bucket: reaproveita `olx-images` (privado, signed URLs).
+- Edge fn: um `if (body.batch_id)` no topo do handler que carrega registros da nova tabela e segue o mesmo loop de processamento.
+- Client: TanStack Query para listagem de lotes e imagens; upload via `supabase.storage.from('olx-images').upload(...)`.
