@@ -230,7 +230,7 @@ function NewBatch() {
       <div className="flex items-center justify-between rounded-md border bg-muted/30 p-3 text-sm">
         <div>
           Custo estimado: <strong>US$ {totalCost}</strong>{" "}
-          <span className="text-muted-foreground">(~US$ {COST_PER_IMAGE_USD.toFixed(2)} por foto)</span>
+          <span className="text-muted-foreground">(~US$ {perFotoCost.toFixed(2)} por foto · qualidade {quality === "medium" ? "média" : "baixa"})</span>
         </div>
         <Button onClick={start} disabled={processing || files.length === 0}>
           {processing
