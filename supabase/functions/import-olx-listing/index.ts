@@ -66,7 +66,7 @@ function collectIdCandidates(...values: unknown[]): string[] {
 }
 
 function getAdIds(ad: any): string[] {
-  return collectIdCandidates(
+  const direct = collectIdCandidates(
     ad?.listingId,
     ad?.listing_id,
     ad?.listId,
@@ -77,7 +77,21 @@ function getAdIds(ad: any): string[] {
     ad?.code,
     ad?.legacyId,
     ad?.legacy_id,
+    ad?.externalId,
+    ad?.external_id,
+    ad?.sourceId,
+    ad?.source_id,
   );
+  // Fallback: varredura rasa dos campos string para pegar ID numérico que a GeckoAPI às vezes
+  // esconde em link/sourceUrl/href/canonicalUrl do card.
+  const extra: string[] = [];
+  if (ad && typeof ad === "object") {
+    const strFields = [ad?.url, ad?.link, ad?.href, ad?.shareUrl, ad?.canonicalUrl, ad?.sourceUrl, ad?.detailUrl];
+    for (const v of strFields) {
+      if (typeof v === "string") extra.push(...collectIdCandidates(v));
+    }
+  }
+  return Array.from(new Set([...direct, ...extra]));
 }
 
 function getUrlIds(raw: string | null | undefined): string[] {
