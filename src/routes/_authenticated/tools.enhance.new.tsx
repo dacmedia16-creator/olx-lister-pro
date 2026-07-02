@@ -108,7 +108,7 @@ function NewBatch() {
       for (let i = 0; i < imageIds.length; i += BATCH) {
         const chunk = imageIds.slice(i, i + BATCH);
         const { error } = await supabase.functions.invoke("enhance-listing-images", {
-          body: { batch_id: batchId, image_ids: chunk, mode },
+          body: { batch_id: batchId, image_ids: chunk, mode, quality },
         });
         if (error) throw error;
         done += chunk.length;
