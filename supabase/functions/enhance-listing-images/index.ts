@@ -278,8 +278,9 @@ Deno.serve(async (req) => {
         listing_id: listingId,
         type: mode === "watermark_only" ? "remove_watermark" : "enhance_images",
         status: "done",
-        message: `enhance-listing-images (${MODEL}, mode=${mode}): ${results.filter(r => r.ok).length}/${results.length} sucesso`,
-        metadata_json: { model: MODEL, mode, results },
+        message: `enhance-listing-images (${MODEL}, mode=${mode}, quality=${quality}): ${results.filter(r => r.ok).length}/${results.length} sucesso`,
+        metadata_json: { model: MODEL, mode, quality, results },
+
       });
     } catch { /* noop */ }
 
