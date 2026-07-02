@@ -8,15 +8,16 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { X } from "lucide-react";
 import { toast } from "sonner";
+import { QualityPicker, QUALITY_COST_USD, type EnhanceQuality } from "@/components/QualityPicker";
 
 export const Route = createFileRoute("/_authenticated/tools/enhance/new")({
   head: () => ({ meta: [{ title: "Novo lote de fotos" }] }),
   component: NewBatch,
 });
 
-const COST_PER_IMAGE_USD = 0.02;
 const MAX_FILES = 20;
 const MAX_SIZE = 15 * 1024 * 1024;
+
 
 function NewBatch() {
   const navigate = useNavigate();
