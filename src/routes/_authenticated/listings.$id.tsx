@@ -152,11 +152,11 @@ function ListingDetail() {
   const [enhanceProgress, setEnhanceProgress] = useState<{ done: number; total: number } | null>(null);
   const [enhancingIds, setEnhancingIds] = useState<Set<string>>(new Set());
 
-  const enhanceOne = useCallback(async (imageId: string, mode: "enhance" | "watermark_only" = "enhance") => {
+  const enhanceOne = useCallback(async (imageId: string, mode: "enhance" | "watermark_only" = "enhance", quality: EnhanceQuality = "low") => {
     setEnhancingIds((prev) => { const n = new Set(prev); n.add(imageId); return n; });
     try {
       const { data, error } = await supabase.functions.invoke("enhance-listing-images", {
-        body: { listing_id: id, image_ids: [imageId], mode },
+        body: { listing_id: id, image_ids: [imageId], mode, quality },
       });
       if (error) throw error;
       const r = (data as { results?: Array<{ ok: boolean; error?: string }> })?.results?.[0];
@@ -169,6 +169,7 @@ function ListingDetail() {
       setEnhancingIds((prev) => { const n = new Set(prev); n.delete(imageId); return n; });
     }
   }, [id, load]);
+
 
   const [deletingImageIds, setDeletingImageIds] = useState<Set<string>>(new Set());
   const removeImage = useCallback(async (imageId: string) => {
