@@ -190,19 +190,23 @@ function ListingDetail() {
     }
   }, [load]);
 
-  const enhance = useCallback(async (mode: "enhance" | "watermark_only" = "enhance", quality: EnhanceQuality = "low") => {
+  const enhance = useCallback(async (mode: "enhance" | "watermark_only" = "enhance", quality: EnhanceQuality = "low", overrideIds?: string[]) => {
     setEnhancing(true);
     setEnhanceProgress(null);
     try {
-      // Pega todas as imagens do anúncio com URL original
-      const { data: allImgs } = await supabase
-        .from("listing_images")
-        .select("id,original_external_url")
-        .eq("listing_id", id)
-        .order("position", { ascending: true });
-      const queue = (allImgs ?? [])
-        .filter((i: any) => i.original_external_url)
-        .map((i: any) => i.id as string);
+      let queue: string[];
+      if (overrideIds && overrideIds.length > 0) {
+        queue = overrideIds;
+      } else {
+        const { data: allImgs } = await supabase
+          .from("listing_images")
+          .select("id,original_external_url")
+          .eq("listing_id", id)
+          .order("position", { ascending: true });
+        queue = (allImgs ?? [])
+          .filter((i: any) => i.original_external_url)
+          .map((i: any) => i.id as string);
+      }
       if (queue.length === 0) {
         toast.error("Nenhuma foto disponível para processar");
         return;
@@ -230,6 +234,8 @@ function ListingDetail() {
           ? `Marca d'água removida: ${ok}/${total}`
           : `Fotos tratadas: ${ok}/${total}`,
       );
+      setSelectionMode(false);
+      setSelectedIds(new Set());
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Falha ao processar fotos");
     } finally {
