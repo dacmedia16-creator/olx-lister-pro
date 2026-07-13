@@ -55,16 +55,33 @@ function SearchPage() {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
 
   // filtros
+  const [portal, setPortal] = useState<Portal>("olx");
   const [keyword, setKeyword] = useState("");
   const [state, setState] = useState("");
   const [city, setCity] = useState("");
   const [region, setRegion] = useState("");
+  const [neighborhood, setNeighborhood] = useState("");
   const [categoryPath, setCategoryPath] = useState("");
   const [priceMin, setPriceMin] = useState("");
   const [priceMax, setPriceMax] = useState("");
   const [sort, setSort] = useState("");
   const [page, setPage] = useState(1);
   const [urlInput, setUrlInput] = useState("");
+
+  async function runFilters(pageOverride?: number) {
+    setLoading(true);
+    setSelected({});
+    const usePage = pageOverride ?? page;
+    const body: Record<string, unknown> = { page: usePage, portal };
+    if (keyword) body.keyword = keyword;
+    if (state) body.state = state;
+    if (city) body.city = city;
+    if (region) body.region = region;
+    if (neighborhood) body.neighborhood = neighborhood;
+    if (categoryPath) body.categoryPath = categoryPath;
+    if (priceMin) body.priceMin = Number(priceMin);
+    if (priceMax) body.priceMax = Number(priceMax);
+    if (sort) body.sort = sort;
 
   async function runFilters(pageOverride?: number) {
     setLoading(true);
