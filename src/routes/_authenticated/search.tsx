@@ -107,12 +107,14 @@ function SearchPage() {
 
   async function runByUrl() {
     if (!urlInput.trim()) return toast.error("Informe a URL");
-    if (!isValidOlxUrl(urlInput)) return toast.error("URL inválida (apenas olx.com.br)");
+    const detected = detectPortal(urlInput);
+    if (detected === null) return toast.error("URL inválida (olx.com.br, zapimoveis.com.br ou vivareal.com.br)");
+    if (detected !== portal) return toast.error(`A URL é de ${PORTAL_LABEL[detected]} — troque o portal selecionado.`);
     setLoading(true);
     setSelected({});
     const { data, error } = await supabase.functions.invoke<SearchResponse>(
       "search-olx-listings",
-      { body: { url: urlInput.trim() } },
+      { body: { url: urlInput.trim(), portal } },
     );
     setLoading(false);
     handleResponse(data, error);
