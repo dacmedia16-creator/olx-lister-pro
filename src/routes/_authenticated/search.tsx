@@ -164,7 +164,7 @@ function SearchPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Buscar anúncios OLX</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Buscar anúncios (OLX / ZAP / Viva Real)</h1>
 
       <Card>
         <CardHeader><CardTitle>Nova busca</CardTitle></CardHeader>
