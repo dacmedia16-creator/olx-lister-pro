@@ -204,11 +204,12 @@ function ListingsPage() {
             <select
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               value={portal}
-              onChange={(e) => setPortal(e.target.value as "" | "olx" | "zap")}
+              onChange={(e) => setPortal(e.target.value as "" | "olx" | "zap" | "viva")}
             >
               <option value="">Todos</option>
               <option value="olx">OLX</option>
               <option value="zap">ZAP Imóveis</option>
+              <option value="viva">Viva Real</option>
             </select>
           </div>
           <div className="md:col-span-6">
