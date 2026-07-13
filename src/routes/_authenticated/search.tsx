@@ -352,7 +352,7 @@ function SearchPage() {
                       <span>{r.image_count != null ? `${r.image_count} foto(s)` : ""}</span>
                       {r.source_url && (
                         <a href={r.source_url} target="_blank" rel="noreferrer" className="underline">
-                          Abrir na OLX
+                          Abrir no portal
                         </a>
                       )}
                     </div>
