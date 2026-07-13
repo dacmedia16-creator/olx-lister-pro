@@ -55,7 +55,7 @@ function ImportPage() {
     if (urls.length === 0) return toast.error("Informe ao menos uma URL");
     const invalid = urls.filter((u) => !isValidOlxUrl(u));
     if (invalid.length > 0) {
-      return toast.error(`URL inválida (apenas olx.com.br ou zapimoveis.com.br): ${invalid[0]}`);
+      return toast.error(`URL inválida (apenas olx.com.br, zapimoveis.com.br ou vivareal.com.br): ${invalid[0]}`);
     }
     setSubmitting(true);
     const { data, error } = await supabase.functions.invoke("import-olx-listing", {
