@@ -239,11 +239,29 @@ function SearchPage() {
 
             <TabsContent value="url" className="pt-4">
               <div className="space-y-1">
-                <Label>URL de listagem OLX</Label>
+                <Label>Portal</Label>
+                <select
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={portal}
+                  onChange={(e) => setPortal(e.target.value as Portal)}
+                >
+                  <option value="olx">OLX</option>
+                  <option value="zap">ZAP Imóveis</option>
+                  <option value="viva">Viva Real</option>
+                </select>
+              </div>
+              <div className="space-y-1 pt-3">
+                <Label>URL de listagem ({PORTAL_LABEL[portal]})</Label>
                 <Input
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder="https://www.olx.com.br/imoveis/estado-sp"
+                  placeholder={
+                    portal === "zap"
+                      ? "https://www.zapimoveis.com.br/venda/imoveis/sp+sao-paulo/"
+                      : portal === "viva"
+                      ? "https://www.vivareal.com.br/venda/sp/sao-paulo/"
+                      : "https://www.olx.com.br/imoveis/estado-sp"
+                  }
                 />
               </div>
               <div className="pt-4">
