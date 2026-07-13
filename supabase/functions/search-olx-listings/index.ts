@@ -185,8 +185,8 @@ Deno.serve(async (req) => {
       await pmap(toEnrichIdx, PDP_CONCURRENCY, async (idx) => {
         const url = ads[idx].url;
         const r = await callGecko(
-          { target: "olx.com.br", type: "pdp", url },
-          { apiKey: GECKO_API_KEY, label: `pdp-enrich[${idx}]`, retries: 1 },
+          { target: geckoTarget, type: "pdp", url },
+          { apiKey: GECKO_API_KEY, label: `pdp-enrich-${portal}[${idx}]`, retries: 1 },
         );
         if (r.ok && r.body?.notFound !== true) {
           pdpImages[idx] = extractPdpImages(r.body);
