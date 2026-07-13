@@ -369,7 +369,7 @@ function ListingDetail() {
             rel="noreferrer"
             className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
           >
-            <ExternalLink className="h-3.5 w-3.5" /> {listing.source_portal === "zap" ? "Abrir no ZAP Imóveis" : "Abrir na OLX"}
+            <ExternalLink className="h-3.5 w-3.5" /> {listing.source_portal === "zap" ? "Abrir no ZAP Imóveis" : listing.source_portal === "viva" ? "Abrir no Viva Real" : "Abrir na OLX"}
           </a>
         </div>
       </div>
