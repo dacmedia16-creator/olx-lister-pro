@@ -1,35 +1,47 @@
-# Seleção múltipla de fotos para tratamento em lote
+# Adicionar Viva Real como terceiro portal
 
-## Objetivo
-Permitir escolher fotos específicas do anúncio e aplicar "Tratar com IA" ou "Remover marca d'água" apenas nas selecionadas — em vez de sempre processar todas.
+Hoje o sistema aceita OLX e ZAP Imóveis. Vou adicionar **Viva Real** (`vivareal.com.br`) nos dois fluxos — importação por URL (PDP) e busca por filtros (PLP) — reaproveitando o pipeline já existente.
 
-## Mudanças em `src/routes/_authenticated/listings.$id.tsx`
+## 1. Detecção de portal (frontend + backend)
 
-### Estado
-- Novo `selectedIds: Set<string>` para fotos marcadas.
-- Novo `selectionMode: boolean` para alternar UI de seleção.
+- `src/lib/portals.ts` e `supabase/functions/_shared/portals.ts`
+  - Adicionar `"viva"` ao tipo `Portal`.
+  - Nova regex `VIVA_RE = /^https?:\/\/(?:[a-z0-9-]+\.)*vivareal\.com\.br\//i`.
+  - `geckoPayloadFor("viva", url)` → `{ target: "vivareal.com.br", type: "pdp", url }`.
+  - `geckoSourceLabel("viva")` → `"vivareal.com.br"`.
+  - `PORTAL_LABEL.viva = "Viva Real"`.
 
-### Header do card "Fotos"
-- Botão toggle **"Selecionar fotos"** (Check icon). Quando ativo:
-  - Substitui os botões atuais "Tratar" / "Remover marca" por:
-    - `Tratar selecionadas (N)` — desabilitado se N=0
-    - `Remover marca das selecionadas (N)` — desabilitado se N=0
-    - `Selecionar todas` / `Limpar seleção`
-    - `Cancelar` (sai do modo seleção)
-  - Os botões abrem o mesmo `AlertDialog` de confirmação existente (com `QualityPicker` e custo estimado), mas passando apenas os IDs selecionados no lugar de "todas as fotos".
+## 2. Banco
 
-### Grid de miniaturas
-- Quando `selectionMode` estiver ativo:
-  - Cada thumbnail ganha um `Checkbox` (canto superior direito) sobre a imagem.
-  - Clicar na foto alterna a seleção (em vez de abrir o lightbox).
-  - Overlay sutil (ring azul) nas selecionadas.
-  - Barra de ações inferior individual fica oculta para evitar cliques acidentais.
+- `source_portal` já é texto livre; nenhuma migração de schema necessária.
+- Novo valor aceito: `"viva"`.
 
-### Fluxo de confirmação
-- `openEnhanceConfirm(mode, imageIds?)`: aceita lista opcional de IDs. Se omitida, mantém comportamento atual (todas as fotos com `original_external_url`).
-- O diálogo mostra `N foto(s) selecionada(s)` quando vindo do modo seleção.
-- `runEnhance` já processa em lotes de 2 — reaproveitado sem mudança lógica, apenas restringido aos IDs recebidos.
+## 3. Edge Function `import-olx-listing` (PDP)
 
-## Detalhes
-- Sem mudanças em Edge Functions, banco ou storage — apenas UI e escopo dos IDs enviados.
-- Sem alteração nos cards da lista de anúncios (`listings.index.tsx`) — seleção é por foto, faz sentido só na tela de detalhes.
+- Usar `detectPortal` para rotear entre OLX / ZAP / Viva.
+- Para Viva, chamar Gecko com `target: "vivareal.com.br"`, `type: "pdp"`.
+- Reaproveitar `extractPdpImages` (já faz varredura profunda + resolve placeholders `{action}/{width}x{height}` que o CDN `resizedimgs.vivareal.com` usa — mesma CDN do ZAP).
+- Fallback PLP: quando o PDP retornar zero fotos, buscar na PLP do Viva usando cidade/bairro/keywords extraídos e casar por ID/URL — espelhando a lógica atual do ZAP.
+- Log e `source_portal = "viva"` persistidos em `olx_listings`.
+
+## 4. Edge Function `search-olx-listings` (PLP)
+
+- Aceitar parâmetro `portal` no body (`"olx" | "zap" | "viva"`, default `"olx"` para retrocompatibilidade).
+- Montar payload Gecko conforme portal:
+  - Viva: `target: "vivareal.com.br"`, `type: "plp"`, com filtros documentados (keyword, state, city, neighborhood, priceMin/Max, page, sort).
+- Enriquecimento PDP quando fotos < `MIN_IMAGES`: chamar PDP do mesmo portal.
+- Validação de URL: aceitar URLs de `vivareal.com.br` quando `portal === "viva"`.
+
+## 5. Frontend
+
+- `src/routes/_authenticated/import.tsx`: mensagem de ajuda e validação já usam `detectPortal` → só atualizar textos ("OLX, ZAP Imóveis ou Viva Real").
+- `src/routes/_authenticated/search.tsx`: adicionar seletor de portal (3 opções) e enviar `portal` ao invocar a função. Filtros compartilhados; rotular campos conforme portal quando necessário.
+- `src/routes/_authenticated/listings.index.tsx` e `listings.$id.tsx`: incluir badge "Viva Real" (cor distinta) e adicionar `"viva"` ao filtro de portal.
+- `OlxImageCarousel` já funciona para qualquer CDN (referrerPolicy no-referrer) — sem mudanças.
+
+## 6. Verificação
+
+- Testar 1 URL de anúncio Viva Real (PDP) e 1 busca com filtros (PLP).
+- Confirmar que fotos são baixadas para o bucket `olx-images` e aparecem em Detalhes.
+
+Nenhuma nova secret é necessária — a mesma `GECKO_API_KEY` cobre os três portais.
