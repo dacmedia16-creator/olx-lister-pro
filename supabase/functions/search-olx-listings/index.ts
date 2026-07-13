@@ -92,24 +92,32 @@ Deno.serve(async (req) => {
     const user_id = userData.user.id;
 
     const body = await req.json().catch(() => ({} as any));
+    const portalRaw = typeof body?.portal === "string" ? body.portal.toLowerCase() : "olx";
+    const portal: Portal = portalRaw === "zap" ? "zap" : portalRaw === "viva" ? "viva" : "olx";
+    const geckoTarget = geckoSourceLabel(portal);
 
-    const payload: Record<string, any> = { target: "olx.com.br", type: "plp" };
+    const payload: Record<string, any> = { target: geckoTarget, type: "plp" };
     if (typeof body?.url === "string" && body.url.trim()) {
-      if (!isValidOlxUrl(body.url)) return json({ error: "URL inválida. Apenas olx.com.br é permitido." }, 400);
+      const detected = detectPortal(body.url);
+      if (detected === null || detected !== portal) {
+        return json({ error: `URL inválida. Esperado ${PORTAL_LABEL[portal]}.` }, 400);
+      }
       payload.url = body.url.trim();
     } else {
       const opt = (k: string) => (body?.[k] !== undefined && body?.[k] !== "" && body?.[k] !== null) ? body[k] : undefined;
       const keyword = opt("keyword"), state = opt("state"), city = opt("city"), region = opt("region");
+      const neighborhood = opt("neighborhood");
       const categoryPath = opt("categoryPath");
       const priceMin = opt("priceMin"), priceMax = opt("priceMax");
       const sort = opt("sort"); const page = opt("page");
       if (!state && !payload.url) {
-        return json({ error: "OLX PLP exige UF (state), ex.: SP." }, 400);
+        return json({ error: `${PORTAL_LABEL[portal]} PLP exige UF (state), ex.: SP.` }, 400);
       }
       if (keyword) payload.keyword = String(keyword);
       if (state) payload.state = String(state);
       if (city) payload.city = String(city);
       if (region) payload.region = String(region);
+      if (neighborhood) payload.neighborhood = String(neighborhood);
       if (categoryPath) payload.categoryPath = String(categoryPath);
       if (priceMin !== undefined) payload.priceMin = Number(priceMin);
       if (priceMax !== undefined) payload.priceMax = Number(priceMax);
