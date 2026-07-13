@@ -51,7 +51,7 @@ function ListingsPage() {
   const [q, setQ] = useState("");
   const [min, setMin] = useState("");
   const [max, setMax] = useState("");
-  const [portal, setPortal] = useState<"" | "olx" | "zap">("");
+  const [portal, setPortal] = useState<"" | "olx" | "zap" | "viva">("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Enhance dialog state
