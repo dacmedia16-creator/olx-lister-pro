@@ -82,20 +82,6 @@ function SearchPage() {
     if (priceMin) body.priceMin = Number(priceMin);
     if (priceMax) body.priceMax = Number(priceMax);
     if (sort) body.sort = sort;
-
-  async function runFilters(pageOverride?: number) {
-    setLoading(true);
-    setSelected({});
-    const usePage = pageOverride ?? page;
-    const body: Record<string, unknown> = { page: usePage };
-    if (keyword) body.keyword = keyword;
-    if (state) body.state = state;
-    if (city) body.city = city;
-    if (region) body.region = region;
-    if (categoryPath) body.categoryPath = categoryPath;
-    if (priceMin) body.priceMin = Number(priceMin);
-    if (priceMax) body.priceMax = Number(priceMax);
-    if (sort) body.sort = sort;
     const { data, error } = await supabase.functions.invoke<SearchResponse>(
       "search-olx-listings",
       { body },
