@@ -9,6 +9,7 @@ import {
   mapGeckoStatusMessage,
   pmap,
 } from "../_shared/gecko.ts";
+import { detectPortal, geckoSourceLabel, type Portal } from "../_shared/portals.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,8 +21,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
 const GECKO_API_KEY = Deno.env.get("GECKO_API_KEY");
 
-const OLX_URL_RE = /^https?:\/\/(?:[a-z0-9-]+\.)*olx\.com\.br\//i;
-const isValidOlxUrl = (u: string) => { try { return OLX_URL_RE.test(new URL(u).toString()); } catch { return false; } };
+const PORTAL_LABEL: Record<Portal, string> = { olx: "OLX", zap: "ZAP Imóveis", viva: "Viva Real" };
 
 function getPlpRoot(gecko: any): any {
   if (gecko?.data?.items && Array.isArray(gecko.data.items)) return gecko.data;
