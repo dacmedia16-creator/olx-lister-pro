@@ -9,7 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { formatBRL, formatDate, isValidOlxUrl } from "@/lib/olx";
+import { formatBRL, formatDate } from "@/lib/olx";
+import { detectPortal, PORTAL_LABEL, type Portal } from "@/lib/portals";
 import { OlxImageCarousel } from "@/components/OlxImageCarousel";
 
 export const Route = createFileRoute("/_authenticated/search")({
@@ -54,10 +55,12 @@ function SearchPage() {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
 
   // filtros
+  const [portal, setPortal] = useState<Portal>("olx");
   const [keyword, setKeyword] = useState("");
   const [state, setState] = useState("");
   const [city, setCity] = useState("");
   const [region, setRegion] = useState("");
+  const [neighborhood, setNeighborhood] = useState("");
   const [categoryPath, setCategoryPath] = useState("");
   const [priceMin, setPriceMin] = useState("");
   const [priceMax, setPriceMax] = useState("");
@@ -69,11 +72,12 @@ function SearchPage() {
     setLoading(true);
     setSelected({});
     const usePage = pageOverride ?? page;
-    const body: Record<string, unknown> = { page: usePage };
+    const body: Record<string, unknown> = { page: usePage, portal };
     if (keyword) body.keyword = keyword;
     if (state) body.state = state;
     if (city) body.city = city;
     if (region) body.region = region;
+    if (neighborhood) body.neighborhood = neighborhood;
     if (categoryPath) body.categoryPath = categoryPath;
     if (priceMin) body.priceMin = Number(priceMin);
     if (priceMax) body.priceMax = Number(priceMax);
@@ -89,12 +93,14 @@ function SearchPage() {
 
   async function runByUrl() {
     if (!urlInput.trim()) return toast.error("Informe a URL");
-    if (!isValidOlxUrl(urlInput)) return toast.error("URL inválida (apenas olx.com.br)");
+    const detected = detectPortal(urlInput);
+    if (detected === null) return toast.error("URL inválida (olx.com.br, zapimoveis.com.br ou vivareal.com.br)");
+    if (detected !== portal) return toast.error(`A URL é de ${PORTAL_LABEL[detected]} — troque o portal selecionado.`);
     setLoading(true);
     setSelected({});
     const { data, error } = await supabase.functions.invoke<SearchResponse>(
       "search-olx-listings",
-      { body: { url: urlInput.trim() } },
+      { body: { url: urlInput.trim(), portal } },
     );
     setLoading(false);
     handleResponse(data, error);
@@ -158,7 +164,7 @@ function SearchPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Buscar anúncios OLX</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Buscar anúncios (OLX / ZAP / Viva Real)</h1>
 
       <Card>
         <CardHeader><CardTitle>Nova busca</CardTitle></CardHeader>
@@ -171,6 +177,18 @@ function SearchPage() {
 
             <TabsContent value="filters" className="pt-4">
               <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-1">
+                  <Label>Portal</Label>
+                  <select
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={portal}
+                    onChange={(e) => setPortal(e.target.value as Portal)}
+                  >
+                    <option value="olx">OLX</option>
+                    <option value="zap">ZAP Imóveis</option>
+                    <option value="viva">Viva Real</option>
+                  </select>
+                </div>
                 <div className="space-y-1 md:col-span-2">
                   <Label>Palavra-chave</Label>
                   <Input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="apartamento" />
@@ -186,6 +204,10 @@ function SearchPage() {
                 <div className="space-y-1">
                   <Label>Cidade</Label>
                   <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="São Paulo" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Bairro</Label>
+                  <Input value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} placeholder="Moema" />
                 </div>
                 <div className="space-y-1">
                   <Label>Região</Label>
@@ -217,11 +239,29 @@ function SearchPage() {
 
             <TabsContent value="url" className="pt-4">
               <div className="space-y-1">
-                <Label>URL de listagem OLX</Label>
+                <Label>Portal</Label>
+                <select
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={portal}
+                  onChange={(e) => setPortal(e.target.value as Portal)}
+                >
+                  <option value="olx">OLX</option>
+                  <option value="zap">ZAP Imóveis</option>
+                  <option value="viva">Viva Real</option>
+                </select>
+              </div>
+              <div className="space-y-1 pt-3">
+                <Label>URL de listagem ({PORTAL_LABEL[portal]})</Label>
                 <Input
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder="https://www.olx.com.br/imoveis/estado-sp"
+                  placeholder={
+                    portal === "zap"
+                      ? "https://www.zapimoveis.com.br/venda/imoveis/sp+sao-paulo/"
+                      : portal === "viva"
+                      ? "https://www.vivareal.com.br/venda/sp/sao-paulo/"
+                      : "https://www.olx.com.br/imoveis/estado-sp"
+                  }
                 />
               </div>
               <div className="pt-4">
@@ -312,7 +352,7 @@ function SearchPage() {
                       <span>{r.image_count != null ? `${r.image_count} foto(s)` : ""}</span>
                       {r.source_url && (
                         <a href={r.source_url} target="_blank" rel="noreferrer" className="underline">
-                          Abrir na OLX
+                          Abrir no portal
                         </a>
                       )}
                     </div>

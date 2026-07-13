@@ -55,7 +55,7 @@ function ImportPage() {
     if (urls.length === 0) return toast.error("Informe ao menos uma URL");
     const invalid = urls.filter((u) => !isValidOlxUrl(u));
     if (invalid.length > 0) {
-      return toast.error(`URL inválida (apenas olx.com.br ou zapimoveis.com.br): ${invalid[0]}`);
+      return toast.error(`URL inválida (apenas olx.com.br, zapimoveis.com.br ou vivareal.com.br): ${invalid[0]}`);
     }
     setSubmitting(true);
     const { data, error } = await supabase.functions.invoke("import-olx-listing", {
@@ -76,7 +76,7 @@ function ImportPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Importar anúncios (OLX / ZAP Imóveis)</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Importar anúncios (OLX / ZAP Imóveis / Viva Real)</h1>
       <Card>
         <CardHeader><CardTitle>Novas URLs</CardTitle></CardHeader>
         <CardContent>
@@ -85,7 +85,7 @@ function ImportPage() {
               <Label htmlFor="single">URL individual</Label>
               <Input
                 id="single"
-                placeholder="https://www.olx.com.br/... ou https://www.zapimoveis.com.br/..."
+                placeholder="https://www.olx.com.br/... , https://www.zapimoveis.com.br/... ou https://www.vivareal.com.br/..."
                 value={singleUrl}
                 onChange={(e) => setSingleUrl(e.target.value)}
               />
@@ -95,7 +95,7 @@ function ImportPage() {
               <Textarea
                 id="multi"
                 rows={6}
-                placeholder="https://www.olx.com.br/...&#10;https://www.zapimoveis.com.br/..."
+                placeholder="https://www.olx.com.br/...&#10;https://www.zapimoveis.com.br/...&#10;https://www.vivareal.com.br/..."
                 value={multiUrls}
                 onChange={(e) => setMultiUrls(e.target.value)}
               />

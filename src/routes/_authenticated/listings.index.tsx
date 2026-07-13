@@ -51,7 +51,7 @@ function ListingsPage() {
   const [q, setQ] = useState("");
   const [min, setMin] = useState("");
   const [max, setMax] = useState("");
-  const [portal, setPortal] = useState<"" | "olx" | "zap">("");
+  const [portal, setPortal] = useState<"" | "olx" | "zap" | "viva">("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Enhance dialog state
@@ -204,11 +204,12 @@ function ListingsPage() {
             <select
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               value={portal}
-              onChange={(e) => setPortal(e.target.value as "" | "olx" | "zap")}
+              onChange={(e) => setPortal(e.target.value as "" | "olx" | "zap" | "viva")}
             >
               <option value="">Todos</option>
               <option value="olx">OLX</option>
               <option value="zap">ZAP Imóveis</option>
+              <option value="viva">Viva Real</option>
             </select>
           </div>
           <div className="md:col-span-6">
@@ -238,8 +239,8 @@ function ListingsPage() {
                           </span>
                         </>
                       )}
-                      <span className={`absolute left-2 top-2 rounded px-1.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur ${l.source_portal === "zap" ? "bg-blue-600/90" : "bg-purple-600/90"}`}>
-                        {l.source_portal === "zap" ? "ZAP" : "OLX"}
+                      <span className={`absolute left-2 top-2 rounded px-1.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur ${l.source_portal === "zap" ? "bg-blue-600/90" : l.source_portal === "viva" ? "bg-amber-600/90" : "bg-purple-600/90"}`}>
+                        {l.source_portal === "zap" ? "ZAP" : l.source_portal === "viva" ? "VIVA" : "OLX"}
                       </span>
                       {photoStats[l.id]?.enhanced ? (
                         <span

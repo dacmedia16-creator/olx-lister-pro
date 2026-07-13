@@ -351,8 +351,8 @@ function ListingDetail() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className={`rounded px-2 py-0.5 text-[11px] font-semibold text-white ${listing.source_portal === "zap" ? "bg-blue-600" : "bg-purple-600"}`}>
-              {listing.source_portal === "zap" ? "ZAP Imóveis" : "OLX"}
+            <span className={`rounded px-2 py-0.5 text-[11px] font-semibold text-white ${listing.source_portal === "zap" ? "bg-blue-600" : listing.source_portal === "viva" ? "bg-amber-600" : "bg-purple-600"}`}>
+              {listing.source_portal === "zap" ? "ZAP Imóveis" : listing.source_portal === "viva" ? "Viva Real" : "OLX"}
             </span>
             <h1 className="text-2xl font-semibold tracking-tight">{listing.title ?? "(sem título)"}</h1>
           </div>
@@ -369,7 +369,7 @@ function ListingDetail() {
             rel="noreferrer"
             className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
           >
-            <ExternalLink className="h-3.5 w-3.5" /> {listing.source_portal === "zap" ? "Abrir no ZAP Imóveis" : "Abrir na OLX"}
+            <ExternalLink className="h-3.5 w-3.5" /> {listing.source_portal === "zap" ? "Abrir no ZAP Imóveis" : listing.source_portal === "viva" ? "Abrir no Viva Real" : "Abrir na OLX"}
           </a>
         </div>
       </div>
