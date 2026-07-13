@@ -85,7 +85,7 @@ function ImportPage() {
               <Label htmlFor="single">URL individual</Label>
               <Input
                 id="single"
-                placeholder="https://www.olx.com.br/... ou https://www.zapimoveis.com.br/..."
+                placeholder="https://www.olx.com.br/... , https://www.zapimoveis.com.br/... ou https://www.vivareal.com.br/..."
                 value={singleUrl}
                 onChange={(e) => setSingleUrl(e.target.value)}
               />
@@ -95,7 +95,7 @@ function ImportPage() {
               <Textarea
                 id="multi"
                 rows={6}
-                placeholder="https://www.olx.com.br/...&#10;https://www.zapimoveis.com.br/..."
+                placeholder="https://www.olx.com.br/...&#10;https://www.zapimoveis.com.br/...&#10;https://www.vivareal.com.br/..."
                 value={multiUrls}
                 onChange={(e) => setMultiUrls(e.target.value)}
               />
