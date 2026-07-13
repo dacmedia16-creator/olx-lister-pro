@@ -177,6 +177,18 @@ function SearchPage() {
 
             <TabsContent value="filters" className="pt-4">
               <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-1">
+                  <Label>Portal</Label>
+                  <select
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={portal}
+                    onChange={(e) => setPortal(e.target.value as Portal)}
+                  >
+                    <option value="olx">OLX</option>
+                    <option value="zap">ZAP Imóveis</option>
+                    <option value="viva">Viva Real</option>
+                  </select>
+                </div>
                 <div className="space-y-1 md:col-span-2">
                   <Label>Palavra-chave</Label>
                   <Input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="apartamento" />
@@ -192,6 +204,10 @@ function SearchPage() {
                 <div className="space-y-1">
                   <Label>Cidade</Label>
                   <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="São Paulo" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Bairro</Label>
+                  <Input value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} placeholder="Moema" />
                 </div>
                 <div className="space-y-1">
                   <Label>Região</Label>
