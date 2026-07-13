@@ -9,7 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { formatBRL, formatDate, isValidOlxUrl } from "@/lib/olx";
+import { formatBRL, formatDate } from "@/lib/olx";
+import { detectPortal, PORTAL_LABEL, type Portal } from "@/lib/portals";
 import { OlxImageCarousel } from "@/components/OlxImageCarousel";
 
 export const Route = createFileRoute("/_authenticated/search")({
